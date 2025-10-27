@@ -8,6 +8,13 @@ class DebugLogger: ObservableObject {
     @Published var logs: [LogEntry] = []
     private let maxLogs = 1000 // Keep last 1000 log entries
     private let queue = DispatchQueue(label: "debug.logger", qos: .utility)
+    private static let logFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
     
     struct LogEntry: Identifiable, Equatable {
         let id = UUID()
@@ -15,11 +22,14 @@ class DebugLogger: ObservableObject {
         let level: LogLevel
         let message: String
         let source: String
-        
-        var formattedTimestamp: String {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm:ss.SSS"
-            return formatter.string(from: timestamp)
+        let formattedTimestamp: String
+
+        init(timestamp: Date, level: LogLevel, message: String, source: String, formattedTimestamp: String) {
+            self.timestamp = timestamp
+            self.level = level
+            self.message = message
+            self.source = source
+            self.formattedTimestamp = formattedTimestamp
         }
     }
     
@@ -42,26 +52,35 @@ class DebugLogger: ObservableObject {
     private init() {}
     
     func log(_ message: String, level: LogLevel = .info, source: String = "App") {
+        let loggingEnabled = SettingsStore.shared.enableDebugLogs
+
         queue.async {
-            let entry = LogEntry(timestamp: Date(), level: level, message: message, source: source)
+            let timestamp = Date()
+            let timestampString = Self.logFormatter.string(from: timestamp)
+            let entry: LogEntry? = loggingEnabled
+                ? LogEntry(timestamp: timestamp, level: level, message: message, source: source, formattedTimestamp: timestampString)
+                : nil
+            let formattedLine = entry.map(self.formatLogEntry)
+                ?? self.formatLogLine(timestamp: timestampString, level: level, source: source, message: message)
 
-            // Always log errors and warnings, and now also debug messages for better troubleshooting
-            let shouldLogToConsole = level == .error || level == .warning || level == .debug
-
-            let formattedLine = "[\(entry.formattedTimestamp)] [\(level.rawValue)] [\(source)] \(message)"
             FileLogger.shared.append(line: formattedLine)
 
-            if shouldLogToConsole {
+            if level == .error || level == .warning || level == .debug {
                 // Also print to console for Xcode debugging
                 print(formattedLine)
             }
 
+            guard let entry = entry else { return }
+
             DispatchQueue.main.async {
                 self.logs.append(entry)
 
-                // Keep only the last maxLogs entries
-                if self.logs.count > self.maxLogs {
-                    self.logs.removeFirst(self.logs.count - self.maxLogs)
+                // Only trim when significantly above capacity to reduce churn
+                if self.logs.count > self.maxLogs + 100 {
+                    let excess = self.logs.count - self.maxLogs
+                    if excess > 0 {
+                        self.logs.removeFirst(excess)
+                    }
                 }
             }
         }
@@ -75,8 +94,16 @@ class DebugLogger: ObservableObject {
     
     func exportLogs() -> String {
         return logs.map { entry in
-            "[\(entry.formattedTimestamp)] [\(entry.level.rawValue)] [\(entry.source)] \(entry.message)"
+            formatLogEntry(entry)
         }.joined(separator: "\n")
+    }
+
+    private func formatLogEntry(_ entry: LogEntry) -> String {
+        formatLogLine(timestamp: entry.formattedTimestamp, level: entry.level, source: entry.source, message: entry.message)
+    }
+
+    private func formatLogLine(timestamp: String, level: LogLevel, source: String, message: String) -> String {
+        "[\(timestamp)] [\(level.rawValue)] [\(source)] \(message)"
     }
 }
 
