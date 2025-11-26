@@ -64,15 +64,21 @@ struct RewriteModeView: View {
                         }
                     } else {
                         VStack(spacing: 12) {
-                            Image(systemName: "text.cursor")
+                            Image(systemName: "text.bubble")
                                 .font(.system(size: 48))
-                                .foregroundStyle(.secondary)
-                            Text("No text selected")
+                                .foregroundStyle(.teal)
+                            Text("Write Mode")
                                 .font(.title2)
                                 .fontWeight(.bold)
-                            Text("Select text in any app and press the Rewrite shortcut to speak your rewrite instruction")
+                            Text("Ask the AI to write anything for you - emails, replies, summaries, answers, and more.")
                                 .foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
+                            
+                            Text("Or select text first to rewrite existing content.")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                                .multilineTextAlignment(.center)
+                                .padding(.top, 4)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
@@ -129,7 +135,10 @@ struct RewriteModeView: View {
             
             // Input Area
             HStack {
-                TextField("How should I rewrite this? (e.g. 'Make it professional')", text: $inputText)
+                TextField(service.originalText.isEmpty 
+                    ? "Ask me to write anything..." 
+                    : "How should I rewrite this?", 
+                    text: $inputText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(submitRequest)
                 
@@ -138,7 +147,7 @@ struct RewriteModeView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
-                .disabled(inputText.isEmpty || service.isProcessing || service.originalText.isEmpty)
+                .disabled(inputText.isEmpty || service.isProcessing)
                 
                 // Voice Input
                 Button(action: toggleRecording) {
@@ -147,7 +156,6 @@ struct RewriteModeView: View {
                         .foregroundStyle(asr.isRunning ? Color.red : Color.accentColor)
                 }
                 .buttonStyle(.plain)
-                .disabled(service.originalText.isEmpty)
                 
                 if service.isProcessing {
                     ProgressView()

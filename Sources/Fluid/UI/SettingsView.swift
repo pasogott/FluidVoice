@@ -22,6 +22,8 @@ struct SettingsView: View {
     @Binding var accessibilityEnabled: Bool
     @Binding var hotkeyShortcut: HotkeyShortcut
     @Binding var isRecordingShortcut: Bool
+    @Binding var commandModeShortcut: HotkeyShortcut
+    @Binding var isRecordingCommandModeShortcut: Bool
     @Binding var rewriteShortcut: HotkeyShortcut
     @Binding var isRecordingRewriteShortcut: Bool
     @Binding var hotkeyManagerInitialized: Bool
@@ -344,48 +346,24 @@ struct SettingsView: View {
                         if accessibilityEnabled {
                             // Hotkey is enabled
                             VStack(alignment: .leading, spacing: 12) {
-                                // Current Hotkey Display
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Current Hotkey")
-                                        .font(.subheadline)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(.secondary)
-                                    
-                                    // Hotkey Display Row
-                                    HStack(spacing: 16) {
-                                        // Clean Hotkey Display
-                                        HStack(spacing: 8) {
-                                            Text(hotkeyShortcut.displayString)
-                                                .font(.system(size: 16, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(.primary)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 6)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .fill(.quaternary.opacity(0.5))
-                                                        .overlay(
-                                                            RoundedRectangle(cornerRadius: 8)
-                                                                .stroke(.primary.opacity(0.2), lineWidth: 1)
-                                                        )
-                                                )
-                                        }
+                                // Status indicator
+                                HStack(spacing: 10) {
+                                    if isRecordingShortcut || isRecordingCommandModeShortcut || isRecordingRewriteShortcut {
+                                        Image(systemName: "hand.point.up.left.fill")
+                                            .foregroundStyle(.orange)
+                                            .font(.system(size: 16, weight: .medium))
+                                        Text("Press your new hotkey combination now...")
+                                            .font(.system(.subheadline, weight: .medium))
+                                            .foregroundStyle(.orange)
+                                    } else if hotkeyManagerInitialized {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(.green)
+                                            .font(.system(size: 16))
+                                        Text("Global Shortcuts Active")
+                                            .font(.system(.subheadline, weight: .semibold))
+                                            .foregroundStyle(.white)
                                         
                                         Spacer()
-                                        
-                                        // Enhanced Change Button
-                                        Button {
-                                            DebugLogger.shared.debug("Starting to record new shortcut", source: "SettingsView")
-                                            isRecordingShortcut = true
-                                        } label: {
-                                            HStack(spacing: 8) {
-                                                Image(systemName: "pencil")
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                Text("Change")
-                                                    .fontWeight(.semibold)
-                                            }
-                                        }
-                                        .buttonStyle(GlassButtonStyle())
-                                        .buttonHoverEffect()
                                         
                                         // Restart button for accessibility changes
                                         if !hotkeyManagerInitialized && accessibilityEnabled {
@@ -402,32 +380,6 @@ struct SettingsView: View {
                                             }
                                             .buttonStyle(InlineButtonStyle())
                                             .buttonHoverEffect()
-                                        }
-                                    }
-                                }
-                                
-                                // Enhanced Status/Instruction Text
-                                HStack(spacing: 10) {
-                                    if isRecordingShortcut {
-                                        Image(systemName: "hand.point.up.left.fill")
-                                            .foregroundStyle(.white)
-                                            .font(.system(size: 16, weight: .medium))
-                                        Text("Press your new hotkey combination now...")
-                                            .font(.system(.subheadline, weight: .medium))
-                                            .foregroundStyle(.white)
-                                    } else if hotkeyManagerInitialized {
-                                        Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
-                                            .font(.system(size: 16))
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Global Shortcut Active")
-                                                .font(.system(.caption, weight: .semibold))
-                                                .foregroundStyle(.white)
-                                            Text(pressAndHoldModeEnabled
-                                                 ? "Hold \(hotkeyShortcut.displayString) to record and release to stop"
-                                                 : "Press \(hotkeyShortcut.displayString) anywhere to start/stop recording")
-                                                .font(.system(.caption))
-                                                .foregroundStyle(.secondary)
                                         }
                                     } else {
                                         ProgressView()
@@ -454,6 +406,74 @@ struct SettingsView: View {
                                                 .stroke(.white.opacity(0.1), lineWidth: 1)
                                         )
                                 )
+                                
+                                // MARK: - Shortcuts Section
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("Keyboard Shortcuts")
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundStyle(.secondary)
+                                    
+                                    // Transcribe Mode Shortcut
+                                    shortcutRow(
+                                        icon: "mic.fill",
+                                        iconColor: .secondary,
+                                        title: "Transcribe Mode",
+                                        description: "Dictate text anywhere",
+                                        shortcut: hotkeyShortcut,
+                                        isRecording: isRecordingShortcut,
+                                        onChangePressed: {
+                                            DebugLogger.shared.debug("Starting to record new transcribe shortcut", source: "SettingsView")
+                                            isRecordingShortcut = true
+                                        }
+                                    )
+                                    
+                                    Divider()
+                                        .padding(.vertical, 2)
+                                    
+                                    // Command Mode Shortcut
+                                    shortcutRow(
+                                        icon: "terminal.fill",
+                                        iconColor: .secondary,
+                                        title: "Command Mode",
+                                        description: "Execute voice commands",
+                                        shortcut: commandModeShortcut,
+                                        isRecording: isRecordingCommandModeShortcut,
+                                        onChangePressed: {
+                                            DebugLogger.shared.debug("Starting to record new command mode shortcut", source: "SettingsView")
+                                            isRecordingCommandModeShortcut = true
+                                        }
+                                    )
+                                    
+                                    Divider()
+                                        .padding(.vertical, 2)
+                                    
+                                    // Rewrite Mode Shortcut
+                                    shortcutRow(
+                                        icon: "pencil.and.outline",
+                                        iconColor: .secondary,
+                                        title: "Rewrite Mode",
+                                        description: "Select text and speak how to rewrite",
+                                        shortcut: rewriteShortcut,
+                                        isRecording: isRecordingRewriteShortcut,
+                                        onChangePressed: {
+                                            DebugLogger.shared.debug("Starting to record new rewrite shortcut", source: "SettingsView")
+                                            isRecordingRewriteShortcut = true
+                                        }
+                                    )
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(.ultraThinMaterial.opacity(0.5))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .stroke(.white.opacity(0.08), lineWidth: 1)
+                                        )
+                                )
+                                
+                                // MARK: - Options Section
                                 
                                 // Press and hold toggle
                                 VStack(alignment: .leading, spacing: 10) {
@@ -525,72 +545,6 @@ struct SettingsView: View {
                                 .onChange(of: copyToClipboard) { newValue in
                                     SettingsStore.shared.copyTranscriptionToClipboard = newValue
                                 }
-                                
-                                Divider()
-                                    .padding(.vertical, 4)
-                                
-                                // Rewrite Mode Shortcut
-                                VStack(alignment: .leading, spacing: 10) {
-                                    HStack {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text("Rewrite Mode Shortcut")
-                                                .font(.subheadline)
-                                                .fontWeight(.medium)
-                                            Text("Select text, press shortcut, speak how to rewrite")
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                        }
-                                        
-                                        Spacer()
-                                        
-                                        // Shortcut display
-                                        if isRecordingRewriteShortcut {
-                                            Text("Press new shortcut...")
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundStyle(.orange)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .fill(.orange.opacity(0.2))
-                                                )
-                                        } else {
-                                            Text(rewriteShortcut.displayString)
-                                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                                                .foregroundStyle(.primary)
-                                                .padding(.horizontal, 10)
-                                                .padding(.vertical, 5)
-                                                .background(
-                                                    RoundedRectangle(cornerRadius: 6)
-                                                        .fill(.quaternary.opacity(0.5))
-                                                        .overlay(
-                                                            RoundedRectangle(cornerRadius: 6)
-                                                                .stroke(.primary.opacity(0.2), lineWidth: 1)
-                                                        )
-                                                )
-                                        }
-                                        
-                                        // Change button
-                                        Button {
-                                            isRecordingRewriteShortcut = true
-                                        } label: {
-                                            Text("Change")
-                                                .font(.system(size: 12, weight: .medium))
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .disabled(isRecordingRewriteShortcut)
-                                    }
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(.ultraThinMaterial.opacity(0.5))
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .stroke(.white.opacity(0.08), lineWidth: 1)
-                                        )
-                                )
                             }
                         } else {
                             // Hotkey disabled - accessibility not enabled
@@ -874,6 +828,75 @@ struct SettingsView: View {
         }
         .onChange(of: visualizerNoiseThreshold) { newValue in
             SettingsStore.shared.visualizerNoiseThreshold = newValue
+        }
+    }
+    
+    // MARK: - Shortcut Row Helper
+    @ViewBuilder
+    private func shortcutRow(
+        icon: String,
+        iconColor: Color,
+        title: String,
+        description: String,
+        shortcut: HotkeyShortcut,
+        isRecording: Bool,
+        onChangePressed: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            // Icon
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(iconColor)
+                .frame(width: 24)
+            
+            // Title and description
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            // Shortcut display
+            if isRecording {
+                Text("Press shortcut...")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.orange.opacity(0.2))
+                    )
+            } else {
+                Text(shortcut.displayString)
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.quaternary.opacity(0.5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(.primary.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+            }
+            
+            // Change button
+            Button {
+                onChangePressed()
+            } label: {
+                Text("Change")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.bordered)
+            .disabled(isRecording)
         }
     }
 }

@@ -94,6 +94,7 @@ struct ContentView: View {
     @State private var isRecordingForRewrite: Bool = false  // Track if current recording is for rewrite mode
     @State private var isRecordingForCommand: Bool = false  // Track if current recording is for command mode
     @State private var isRecordingShortcut = false
+    @State private var isRecordingCommandModeShortcut = false
     @State private var isRecordingRewriteShortcut = false
     @State private var pendingModifierFlags: NSEvent.ModifierFlags = []
     @State private var pendingModifierKeyCode: UInt16?
@@ -314,8 +315,8 @@ struct ContentView: View {
                 let eventModifiers = event.modifierFlags.intersection([.function, .command, .option, .control, .shift])
                 let shortcutModifiers = hotkeyShortcut.modifierFlags.intersection([.function, .command, .option, .control, .shift])
                 
-                let isRecordingAnyShortcut = isRecordingShortcut || isRecordingRewriteShortcut
-                DebugLogger.shared.debug("NSEvent \(event.type) keyCode=\(event.keyCode) recordingShortcut=\(isRecordingShortcut) recordingRewrite=\(isRecordingRewriteShortcut)", source: "ContentView")
+                let isRecordingAnyShortcut = isRecordingShortcut || isRecordingCommandModeShortcut || isRecordingRewriteShortcut
+                DebugLogger.shared.debug("NSEvent \(event.type) keyCode=\(event.keyCode) recordingShortcut=\(isRecordingShortcut) recordingCommand=\(isRecordingCommandModeShortcut) recordingRewrite=\(isRecordingRewriteShortcut)", source: "ContentView")
 
                 if event.type == .keyDown {
                     if event.keyCode == hotkeyShortcut.keyCode && eventModifiers == shortcutModifiers {
@@ -353,6 +354,7 @@ struct ContentView: View {
                     if keyCode == 53 {
                         DebugLogger.shared.debug("NSEvent monitor: Escape pressed, cancelling shortcut recording", source: "ContentView")
                         isRecordingShortcut = false
+                        isRecordingCommandModeShortcut = false
                         isRecordingRewriteShortcut = false
                         resetPendingShortcutState()
                         return nil
@@ -367,6 +369,11 @@ struct ContentView: View {
                         SettingsStore.shared.rewriteModeHotkeyShortcut = newShortcut
                         hotkeyManager?.updateRewriteModeShortcut(newShortcut)
                         isRecordingRewriteShortcut = false
+                    } else if isRecordingCommandModeShortcut {
+                        commandModeHotkeyShortcut = newShortcut
+                        SettingsStore.shared.commandModeHotkeyShortcut = newShortcut
+                        hotkeyManager?.updateCommandModeShortcut(newShortcut)
+                        isRecordingCommandModeShortcut = false
                     } else {
                         hotkeyShortcut = newShortcut
                         SettingsStore.shared.hotkeyShortcut = newShortcut
@@ -400,6 +407,11 @@ struct ContentView: View {
                                 SettingsStore.shared.rewriteModeHotkeyShortcut = newShortcut
                                 hotkeyManager?.updateRewriteModeShortcut(newShortcut)
                                 isRecordingRewriteShortcut = false
+                            } else if isRecordingCommandModeShortcut {
+                                commandModeHotkeyShortcut = newShortcut
+                                SettingsStore.shared.commandModeHotkeyShortcut = newShortcut
+                                hotkeyManager?.updateCommandModeShortcut(newShortcut)
+                                isRecordingCommandModeShortcut = false
                             } else {
                                 hotkeyShortcut = newShortcut
                                 SettingsStore.shared.hotkeyShortcut = newShortcut
@@ -757,6 +769,8 @@ struct ContentView: View {
             accessibilityEnabled: $accessibilityEnabled,
             hotkeyShortcut: $hotkeyShortcut,
             isRecordingShortcut: $isRecordingShortcut,
+            commandModeShortcut: $commandModeHotkeyShortcut,
+            isRecordingCommandModeShortcut: $isRecordingCommandModeShortcut,
             rewriteShortcut: $rewriteModeHotkeyShortcut,
             isRecordingRewriteShortcut: $isRecordingRewriteShortcut,
             hotkeyManagerInitialized: $hotkeyManagerInitialized,
@@ -2101,48 +2115,39 @@ struct ContentView: View {
     /// Build a general system prompt with voice editing commands support
     private func buildSystemPrompt(appInfo: (name: String, bundleId: String, windowTitle: String)) -> String {
         return """
-        You are a transcription post-processor. Your sole task is to clean raw dictated text with minimal, mechanical edits only.
-        - Make the smallest necessary edits. If the text is already clear and grammatical, return it unchanged.
-        - Do not add, invent, or infer any content not present in the input. Never answer questions or provide suggestions.
-        - Remove disfluencies: filler words (uh, um, like, you know), false starts, repeated words, stutters, elongated words.
-        - Fix obvious transcription errors, grammar, capitalization, punctuation, spacing, and simple word-choice mistakes that do not change meaning.
-        - Maintain the original tone and structure. Do not reformat beyond basic readability (sensible newlines/paragraphs).
-        - Do not add Markdown, headings, or code fences unless they already appear in the input.
-        - If the text is a question, preserve it as a question. Do NOT answer it.
-        - If any rule conflicts, prefer fewer edits and no new content.
-        - Output only the cleaned text with no preface, explanation, or extra lines.
+        CRITICAL: You are a TEXT CLEANER, NOT an assistant. You ONLY fix typos and grammar. You NEVER answer, respond, or add content.
 
-        Voice Editing Commands - Process these intelligently:
-        1. Formatting: "new line" → line break, "new paragraph" → double line break, "bullet point X" or "bullet X" → "- X", numbered lists
-        2. Punctuation: Spoken punctuation ("period", "comma", "question mark", "exclamation", "colon", "semicolon") → actual marks
-        3. Corrections: "no"/"scratch that"/"make it X" → replace previous content with X based on context
+        YOUR ONLY JOB: Clean the transcribed text. Return ONLY the cleaned version.
+        
+        RULES:
+        - Fix grammar, punctuation, capitalization
+        - Remove filler words (uh, um, like, you know)
+        - Fix obvious typos and transcription errors
+        - NEVER answer questions - just clean them and return them as questions
+        - NEVER add explanations, responses, or new content
+        - NEVER say "I can help" or "Here's" or anything like that
+        - If someone says "what is X" → return "What is X?" (cleaned, NOT answered)
+        - Output ONLY the cleaned text, nothing else
 
-        Examples:
-        Input: "uh can you, um, email John later question mark"
-        Output: "Can you email John later?"
+        VOICE COMMANDS TO PROCESS:
+        - "new line" → line break
+        - "new paragraph" → double line break  
+        - "period/comma/question mark" → actual punctuation
+        - "bullet point X" → "- X"
 
-        Input: "What's the time in Tokyo?"
-        Output: "What's the time in Tokyo?"
+        EXAMPLES:
+        Input: "uh what is the capital of france"
+        Output: "What is the capital of France?"
 
-        Input: "The function returns an arr a y of ints"
-        Output: "The function returns an array of ints"
+        Input: "can you help me with this"
+        Output: "Can you help me with this?"
 
-        Input: "new line do this, do that, add a bullet point hello, another bullet check exclamation"
-        Output: "do this, do that
-        - hello
-        - check!"
+        Input: "um the meeting is at um 3 PM"
+        Output: "The meeting is at 3 PM."
 
-        Input: "hello who are you? no no no make it how are you"
-        Output: "How are you?"
-
-        Input: "buy groceries comma walk the dog comma call mom period"
-        Output: "buy groceries, walk the dog, call mom."
-
-        Input: "first item new line second item new paragraph third paragraph here"
-        Output: "first item
-        second item
-
-        third paragraph here"
+        Input: "hello new line how are you question mark"
+        Output: "Hello
+        How are you?"
         """
     }
     
@@ -2369,14 +2374,12 @@ struct ContentView: View {
     
     // MARK: - Rewrite Mode Voice Processing
     private func processRewriteWithVoiceInstruction(_ instruction: String) async {
-        DebugLogger.shared.info("Processing rewrite - instruction: '\(instruction)', originalText length: \(rewriteModeService.originalText.count)", source: "ContentView")
+        let hasOriginalText = !rewriteModeService.originalText.isEmpty
+        DebugLogger.shared.info("Processing \(hasOriginalText ? "rewrite" : "write/improve") - instruction: '\(instruction)', originalText length: \(rewriteModeService.originalText.count)", source: "ContentView")
         
-        guard !rewriteModeService.originalText.isEmpty else {
-            DebugLogger.shared.warning("No original text captured for rewrite", source: "ContentView")
-            return
-        }
-        
-        // Process the rewrite request
+        // Process the request - service handles both cases:
+        // - With originalText: rewrites existing text based on instruction
+        // - Without originalText: improves/refines the spoken text
         await rewriteModeService.processRewriteRequest(instruction)
         
         // If rewrite was successful, type the result
@@ -2920,24 +2923,26 @@ struct ContentView: View {
                 self.asr.start()
             },
             rewriteModeCallback: {
-                // Capture text first while still in the other app
+                // Try to capture text first while still in the other app
                 let captured = self.rewriteModeService.captureSelectedText()
                 DebugLogger.shared.info("Rewrite mode triggered, text captured: \(captured)", source: "ContentView")
                 
-                guard captured else {
-                    DebugLogger.shared.warning("No text captured for rewrite", source: "ContentView")
-                    self.menuBarManager.showToast("No text selected")
-                    return
+                if !captured {
+                    // No text selected - start in "write mode" where user speaks what to write
+                    DebugLogger.shared.info("No text selected - starting in write/improve mode", source: "ContentView")
+                    self.rewriteModeService.startWithoutSelection()
+                    // Set overlay mode to write (different visual)
+                    self.menuBarManager.setOverlayMode(.write)
+                } else {
+                    // Text was selected - rewrite mode
+                    self.menuBarManager.setOverlayMode(.rewrite)
                 }
                 
                 // Set flag so stopAndProcessTranscription knows to process as rewrite
                 self.isRecordingForRewrite = true
                 
-                // Set overlay mode to rewrite
-                self.menuBarManager.setOverlayMode(.rewrite)
-                
-                // Start recording immediately for the rewrite instruction
-                DebugLogger.shared.info("Starting voice recording for rewrite instruction", source: "ContentView")
+                // Start recording immediately for the rewrite instruction (or text to improve)
+                DebugLogger.shared.info("Starting voice recording for rewrite/write mode", source: "ContentView")
                 self.asr.start()
             }
         )

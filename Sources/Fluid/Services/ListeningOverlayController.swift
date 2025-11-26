@@ -3,6 +3,7 @@ import AppKit
 enum OverlayMode: String {
     case dictation = "Dictation"
     case rewrite = "Rewrite"
+    case write = "Write"  // No text selected - improve spoken text
     case command = "Command"
 }
 
@@ -320,13 +321,18 @@ final class ListeningOverlayController
             label.alphaValue = 0
             label.stringValue = ""
         case .rewrite:
-            // Show "Rewrite" badge in blue
-            label.stringValue = "✏️ Rewrite"
+            // Show "Rewrite" badge in blue - text was selected
+            label.stringValue = "Rewrite"
             label.textColor = NSColor(calibratedRed: 0.4, green: 0.6, blue: 1.0, alpha: 1.0)
+            label.alphaValue = 1.0
+        case .write:
+            // Show "Write" badge in teal/cyan - no text selected, improving spoken text
+            label.stringValue = "Write"
+            label.textColor = NSColor(calibratedRed: 0.3, green: 0.8, blue: 0.8, alpha: 1.0)
             label.alphaValue = 1.0
         case .command:
             // Show "Command" badge in green
-            label.stringValue = "⚡ Command"
+            label.stringValue = "Command"
             label.textColor = NSColor(calibratedRed: 0.4, green: 0.8, blue: 0.4, alpha: 1.0)
             label.alphaValue = 1.0
         }
