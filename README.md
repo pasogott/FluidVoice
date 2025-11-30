@@ -15,11 +15,11 @@ Fully open source voice-to-text dictation app for macOS with AI enhancement.
 
 ### Command Mode
 
-https://github.com/altic-dev/Fluid-oss/raw/main/assets/FluidVoice_1.5_cmd_mode.mp4
+<video src="assets/FluidVoice_1.5_cmd_mode.mp4" controls width="700"></video>
 
 ### Write Mode
 
-https://github.com/altic-dev/Fluid-oss/raw/main/assets/writemode_FluidVoice_1.5.mp4
+<video src="assets/writemode_FluidVoice_1.5.mp4" controls width="700"></video>
 
 ## Screenshots
 
