@@ -3,11 +3,16 @@ import Combine
 import PromiseKit
 import SwiftUI
 
+enum MenuBarNavigationDestination: String {
+    case preferences
+}
+
 @MainActor
 final class MenuBarManager: ObservableObject {
     private var statusItem: NSStatusItem?
     private var menu: NSMenu?
     private var isSetup: Bool = false
+    private var hostedWindow: NSWindow?
     
     // Cached menu items to avoid rebuilding entire menu
     private var statusMenuItem: NSMenuItem?
@@ -22,6 +27,10 @@ final class MenuBarManager: ObservableObject {
     
     @Published var isRecording: Bool = false
     @Published var aiProcessingEnabled: Bool = false
+    
+    /// One-shot navigation requests from the menu bar into the main window UI.
+    /// `ContentView` consumes this and clears it.
+    @Published var requestedNavigationDestination: MenuBarNavigationDestination? = nil
     
     // Track current overlay mode for notch
     private var currentOverlayMode: OverlayMode = .dictation
@@ -341,9 +350,15 @@ final class MenuBarManager: ObservableObject {
         menu.addItem(.separator())
         
         // Open Main Window
-        let openItem = NSMenuItem(title: "Open FluidVoice", action: #selector(openMainWindow), keyEquivalent: "")
+        let openItem = NSMenuItem(title: "Open Fluid Voice", action: #selector(openMainWindow), keyEquivalent: "")
         openItem.target = self
         menu.addItem(openItem)
+        
+        // Preferences
+        let preferencesItem = NSMenuItem(title: "Preferences", action: #selector(openPreferences), keyEquivalent: ",")
+        preferencesItem.target = self
+        preferencesItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(preferencesItem)
         
         // Check for Updates
         let updateItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
@@ -353,7 +368,7 @@ final class MenuBarManager: ObservableObject {
         menu.addItem(.separator())
         
         // Quit
-        let quitItem = NSMenuItem(title: "Quit FluidVoice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "Quit Fluid Voice", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quitItem.target = NSApp
         menu.addItem(quitItem)
         
@@ -435,32 +450,48 @@ final class MenuBarManager: ObservableObject {
         // Activate the app and bring it to the front
         NSApp.activate(ignoringOtherApps: true)
         
-        // Find and restore an existing primary window (avoid overlay/panel windows)
-        var foundWindow = false
-        let candidateWindows = NSApp.windows
-            .filter { win in
-                // Prefer titled, key-capable windows or ones explicitly titled as our app
-                win.title.contains("FluidVoice") || (win.styleMask.contains(.titled) && win.canBecomeKey)
-            }
-        
-        if let window = candidateWindows.first {
-            if window.isMiniaturized {
-                window.deminiaturize(nil)
-            }
+        // Find an existing *non-minimized* primary window.
+        // Important: avoid programmatic deminiaturize() — it creates internal window transform animations
+        // (NSWindowTransformAnimation) that have been unstable on macOS 26.x for this app.
+        if let window = hostedWindow, window.isReleasedWhenClosed == false {
+            ensureUsableMainWindow(window)
+            window.animationBehavior = .none
             window.makeKeyAndOrderFront(nil)
-            window.orderFrontRegardless()
-            foundWindow = true
-        }
-        
-        // If still nothing suitable, create a new main window
-        if !foundWindow {
+        } else if let window = NSApp.windows.first(where: { win in
+            // Only normal app windows (exclude overlays/panels/menus)
+            guard win.level == .normal else { return false }
+            guard win.styleMask.contains(.titled) else { return false }
+            guard win.canBecomeKey else { return false }
+            guard win.isMiniaturized == false else { return false }
+            
+            // Prefer our main window title when present (both SwiftUI and our fallback window use this)
+            return win.title == "FluidVoice" || win.title.contains("FluidVoice")
+        }) {
+            ensureUsableMainWindow(window)
+            window.animationBehavior = .none
+            window.makeKeyAndOrderFront(nil)
+            hostedWindow = window
+        } else {
+            // If there is no suitable window (or it's minimized), create a fresh one.
             createAndShowMainWindow()
-            foundWindow = true
         }
         
         // Final attempt: ensure app is active and visible
-        if foundWindow {
-            NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    @objc private func openPreferences() {
+        // Ensure a fresh one-shot request every time the menu item is clicked.
+        requestedNavigationDestination = nil
+        requestedNavigationDestination = .preferences
+        
+        openMainWindow()
+        
+        // Nudge again after the window is front-most, so an already-open ContentView
+        // will still switch tabs even if it consumed a previous preference request.
+        DispatchQueue.main.async { [weak self] in
+            self?.requestedNavigationDestination = nil
+            self?.requestedNavigationDestination = .preferences
         }
     }
     
@@ -481,12 +512,37 @@ final class MenuBarManager: ObservableObject {
             defer: false
         )
         window.title = "FluidVoice"
+        window.animationBehavior = .none
+        window.minSize = NSSize(width: 800, height: 500)
+        window.isReleasedWhenClosed = false
         window.contentViewController = hostingController
-        window.center()
+        window.setFrame(defaultWindowFrame(), display: false)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
+        hostedWindow = window
         
         // Bring app to front in case we're running as an accessory app (no Dock)
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    private func ensureUsableMainWindow(_ window: NSWindow) {
+        // If the window is too small (e.g., height collapsed), reset to the default frame.
+        let minSize = NSSize(width: 800, height: 500)
+        window.minSize = minSize
+        
+        let frame = window.frame
+        if frame.height < minSize.height || frame.width < minSize.width {
+            window.setFrame(defaultWindowFrame(), display: false)
+        }
+    }
+    
+    private func defaultWindowFrame() -> NSRect {
+        // Center a sensible default frame on the main screen.
+        let size = NSSize(width: 1000, height: 700)
+        let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: size.width, height: size.height)
+        let origin = NSPoint(
+            x: screenFrame.midX - size.width / 2,
+            y: screenFrame.midY - size.height / 2
+        )
+        return NSRect(origin: origin, size: size)
     }
 }

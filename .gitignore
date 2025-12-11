@@ -194,5 +194,12 @@ RELEASE_NOTES_*
 .cursor
 **.wav
 
+**.dmg
+**.dmg.zip
 # Documentation backups (for future reference, not needed in repo)
 docs/
+
+
+.agent/
+create_dmg_only.sh
+**.m4a

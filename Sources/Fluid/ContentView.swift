@@ -165,9 +165,15 @@ struct ContentView: View {
         }
         .withMouseTracking(mouseTracker)
         .environmentObject(mouseTracker)
+        .onChange(of: menuBarManager.requestedNavigationDestination) { _, destination in
+            handleMenuBarNavigation(destination)
+        }
         .onAppear {
             appear = true
             accessibilityEnabled = checkAccessibilityPermissions()
+            
+            // Handle any pending menu-bar navigation (e.g., Preferences clicked before window existed).
+            handleMenuBarNavigation(menuBarManager.requestedNavigationDestination)
             // If a previous run set a pending restart, clear it now on fresh launch
             if UserDefaults.standard.bool(forKey: accessibilityRestartFlagKey) {
                 UserDefaults.standard.set(false, forKey: accessibilityRestartFlagKey)
@@ -616,6 +622,17 @@ struct ContentView: View {
         } else {
             // If newValue is nil, default to dictation
             menuBarManager.setOverlayMode(.dictation)
+        }
+    }
+    
+    @MainActor
+    private func handleMenuBarNavigation(_ destination: MenuBarNavigationDestination?) {
+        guard let destination else { return }
+        defer { menuBarManager.requestedNavigationDestination = nil }
+        
+        switch destination {
+        case .preferences:
+            selectedSidebarItem = .preferences
         }
     }
 
