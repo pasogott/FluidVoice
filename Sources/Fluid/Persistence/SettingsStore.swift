@@ -55,10 +55,47 @@ final class SettingsStore: ObservableObject
         static let rewriteModeSelectedModel = "RewriteModeSelectedModel"
         static let rewriteModeSelectedProviderID = "RewriteModeSelectedProviderID"
         static let rewriteModeLinkedToGlobal = "RewriteModeLinkedToGlobal"
+        
+        // Model Reasoning Config Keys
+        static let modelReasoningConfigs = "ModelReasoningConfigs"
         static let rewriteModeShortcutEnabled = "RewriteModeShortcutEnabled"
         
         // Stats Keys
         static let userTypingWPM = "UserTypingWPM"
+
+        // Filler Words
+        static let fillerWords = "FillerWords"
+        static let removeFillerWordsEnabled = "RemoveFillerWordsEnabled"
+        
+        // Transcription Provider (ASR)
+        static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"
+    }
+    
+    // MARK: - Model Reasoning Configuration
+    
+    /// Configuration for model-specific reasoning/thinking parameters
+    struct ModelReasoningConfig: Codable, Equatable {
+        /// The parameter name to use (e.g., "reasoning_effort", "enable_thinking", "thinking")
+        var parameterName: String
+        
+        /// The value to use for the parameter (e.g., "low", "medium", "high", "none", "true")
+        var parameterValue: String
+        
+        /// Whether this config is enabled (allows disabling without deleting)
+        var isEnabled: Bool
+        
+        init(parameterName: String = "reasoning_effort", parameterValue: String = "low", isEnabled: Bool = true) {
+            self.parameterName = parameterName
+            self.parameterValue = parameterValue
+            self.isEnabled = isEnabled
+        }
+        
+        /// Common presets for different model types
+        static let openAIGPT5 = ModelReasoningConfig(parameterName: "reasoning_effort", parameterValue: "low", isEnabled: true)
+        static let openAIO1 = ModelReasoningConfig(parameterName: "reasoning_effort", parameterValue: "medium", isEnabled: true)
+        static let groqGPTOSS = ModelReasoningConfig(parameterName: "reasoning_effort", parameterValue: "low", isEnabled: true)
+        static let deepSeekReasoner = ModelReasoningConfig(parameterName: "enable_thinking", parameterValue: "true", isEnabled: true)
+        static let disabled = ModelReasoningConfig(parameterName: "", parameterValue: "", isEnabled: false)
     }
 
     struct SavedProvider: Codable, Identifiable, Hashable
@@ -134,20 +171,22 @@ final class SettingsStore: ObservableObject
     }
 
     var providerAPIKeys: [String: String] {
-        get {
-            var result: [String: String] = [:]
-            for providerID in storedProviderKeyIDs {
-                if let value = try? keychain.fetchKey(for: providerID),
-                   value.isEmpty == false {
-                    result[providerID] = value
-                }
-            }
-            return result
-        }
+        get { (try? keychain.fetchAllKeys()) ?? [:] }
         set {
             objectWillChange.send()
             persistProviderAPIKeys(newValue)
         }
+    }
+    
+    /// Securely retrieve API key for a provider, handling custom prefix logic
+    func getAPIKey(for providerID: String) -> String? {
+        let keys = providerAPIKeys
+        // Try exact match first
+        if let key = keys[providerID] { return key }
+        
+        // Try canonical key format (custom:ID)
+        let canonical = canonicalProviderKey(for: providerID)
+        return keys[canonical]
     }
 
     var selectedProviderID: String
@@ -473,6 +512,83 @@ final class SettingsStore: ObservableObject
         }
     }
     
+    // MARK: - Model Reasoning Configuration
+    
+    /// Per-model reasoning configuration storage
+    /// Key format: "provider:model" (e.g., "openai:gpt-5.1", "groq:gpt-oss-120b")
+    var modelReasoningConfigs: [String: ModelReasoningConfig]
+    {
+        get {
+            guard let data = defaults.data(forKey: Keys.modelReasoningConfigs),
+                  let decoded = try? JSONDecoder().decode([String: ModelReasoningConfig].self, from: data) else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            objectWillChange.send()
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                defaults.set(encoded, forKey: Keys.modelReasoningConfigs)
+            }
+        }
+    }
+    
+    /// Get reasoning config for a specific model, with smart defaults for known models
+    func getReasoningConfig(forModel model: String, provider: String) -> ModelReasoningConfig? {
+        let key = "\(provider):\(model)"
+        
+        // First check if user has a custom config
+        if let customConfig = modelReasoningConfigs[key] {
+            return customConfig.isEnabled ? customConfig : nil
+        }
+        
+        // Apply smart defaults for known model patterns
+        let modelLower = model.lowercased()
+        
+        // OpenAI gpt-5.x models
+        if modelLower.hasPrefix("gpt-5") || modelLower.contains("gpt-5.") {
+            return .openAIGPT5
+        }
+        
+        // OpenAI o1/o3 reasoning models
+        if modelLower.hasPrefix("o1") || modelLower.hasPrefix("o3") {
+            return .openAIO1
+        }
+        
+        // Groq gpt-oss models
+        if modelLower.contains("gpt-oss") || modelLower.hasPrefix("openai/") {
+            return .groqGPTOSS
+        }
+        
+        // DeepSeek reasoner models
+        if modelLower.contains("deepseek") && modelLower.contains("reasoner") {
+            return .deepSeekReasoner
+        }
+        
+        // No reasoning config needed for standard models (gpt-4.x, claude, llama, etc.)
+        return nil
+    }
+    
+    /// Set reasoning config for a specific model
+    func setReasoningConfig(_ config: ModelReasoningConfig?, forModel model: String, provider: String) {
+        let key = "\(provider):\(model)"
+        var configs = modelReasoningConfigs
+        
+        if let config = config {
+            configs[key] = config
+        } else {
+            configs.removeValue(forKey: key)
+        }
+        
+        modelReasoningConfigs = configs
+    }
+    
+    /// Check if a model has a custom (user-defined) reasoning config
+    func hasCustomReasoningConfig(forModel model: String, provider: String) -> Bool {
+        let key = "\(provider):\(model)"
+        return modelReasoningConfigs[key] != nil
+    }
+    
     var rewriteModeShortcutEnabled: Bool
     {
         get {
@@ -502,52 +618,37 @@ final class SettingsStore: ObservableObject
 
     // MARK: - Private Methods
 
-    private var storedProviderKeyIDs: [String] {
-        get { defaults.stringArray(forKey: Keys.providerAPIKeyIdentifiers) ?? [] }
-        set {
-            let unique = Array(Set(newValue)).sorted()
-            defaults.set(unique, forKey: Keys.providerAPIKeyIdentifiers)
-        }
-    }
-
     private func persistProviderAPIKeys(_ values: [String: String]) {
-        let trimmed = values.reduce(into: [String: String]()) { partialResult, pair in
-            let sanitizedValue = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard sanitizedValue.isEmpty == false else { return }
-            partialResult[pair.key] = sanitizedValue
+        let trimmed = sanitizeAPIKeys(values)
+        do {
+            try keychain.storeAllKeys(trimmed)
+        } catch {
+            DebugLogger.shared.error("Failed to persist provider API keys: \(error.localizedDescription)", source: "SettingsStore")
         }
-
-        let existingIDs = Set(storedProviderKeyIDs)
-        let incomingIDs = Set(trimmed.keys)
-
-        for (providerID, apiKey) in trimmed {
-            do {
-                try keychain.storeKey(apiKey, for: providerID)
-            } catch {
-                DebugLogger.shared.error("Failed to store API key for \(providerID): \(error.localizedDescription)", source: "SettingsStore")
-            }
-        }
-
-        for providerID in existingIDs.subtracting(incomingIDs) {
-            do {
-                try keychain.deleteKey(for: providerID)
-            } catch {
-                DebugLogger.shared.error("Failed to delete API key for \(providerID): \(error.localizedDescription)", source: "SettingsStore")
-            }
-        }
-
-        storedProviderKeyIDs = Array(incomingIDs)
     }
 
     private func migrateProviderAPIKeysIfNeeded() {
-        if let legacy = defaults.dictionary(forKey: Keys.providerAPIKeys) as? [String: String],
-           legacy.isEmpty == false {
-            persistProviderAPIKeys(legacy)
-            defaults.removeObject(forKey: Keys.providerAPIKeys)
-        } else if storedProviderKeyIDs.isEmpty,
-                  let existing = try? keychain.allProviderIDs(),
-                  existing.isEmpty == false {
-            storedProviderKeyIDs = existing
+        defaults.removeObject(forKey: Keys.providerAPIKeyIdentifiers)
+
+        var merged = (try? keychain.fetchAllKeys()) ?? [:]
+        var didMutate = false
+
+        if let legacyDefaults = defaults.dictionary(forKey: Keys.providerAPIKeys) as? [String: String],
+           legacyDefaults.isEmpty == false {
+            merged.merge(sanitizeAPIKeys(legacyDefaults)) { _, new in new }
+            didMutate = true
+        }
+        defaults.removeObject(forKey: Keys.providerAPIKeys)
+
+        if let legacyKeychain = try? keychain.legacyProviderEntries(),
+           legacyKeychain.isEmpty == false {
+            merged.merge(sanitizeAPIKeys(legacyKeychain)) { _, new in new }
+            didMutate = true
+            try? keychain.removeLegacyEntries(providerIDs: Array(legacyKeychain.keys))
+        }
+
+        if didMutate {
+            persistProviderAPIKeys(merged)
         }
     }
 
@@ -556,7 +657,6 @@ final class SettingsStore: ObservableObject
               var decoded = try? JSONDecoder().decode([SavedProvider].self, from: data) else { return }
 
         var didModify = false
-        var migratedIDs: [String] = []
         for index in decoded.indices {
             let provider = decoded[index]
             let trimmed = provider.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -565,7 +665,6 @@ final class SettingsStore: ObservableObject
             let keyID = canonicalProviderKey(for: provider.id)
             do {
                 try keychain.storeKey(trimmed, for: keyID)
-                migratedIDs.append(keyID)
                 didModify = true
             } catch {
                 DebugLogger.shared.error("Failed to migrate API key for \(provider.name): \(error.localizedDescription)", source: "SettingsStore")
@@ -583,9 +682,7 @@ final class SettingsStore: ObservableObject
             defaults.set(encoded, forKey: Keys.savedProviders)
         }
 
-        if didModify {
-            storedProviderKeyIDs = storedProviderKeyIDs + migratedIDs
-        }
+        // No need to track migrated IDs; consolidated storage keeps them together.
     }
 
     private func canonicalProviderKey(for providerID: String) -> String {
@@ -596,6 +693,14 @@ final class SettingsStore: ObservableObject
             return providerID
         }
         return "custom:\(providerID)"
+    }
+
+    private func sanitizeAPIKeys(_ values: [String: String]) -> [String: String] {
+        values.reduce(into: [String: String]()) { partialResult, pair in
+            let sanitizedValue = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard sanitizedValue.isEmpty == false else { return }
+            partialResult[pair.key] = sanitizedValue
+        }
     }
 
     private func updateLaunchAtStartup(_ enabled: Bool) {
@@ -657,5 +762,72 @@ final class SettingsStore: ObservableObject
         UserDefaults.standard.set(visible, forKey: "IntendedDockVisibility")
         DebugLogger.shared.info("✓ Dock visibility preference saved: \(visible)", source: "SettingsStore")
         #endif
+    }
+
+    // MARK: - Filler Words
+
+    static let defaultFillerWords = ["um", "uh", "er", "ah", "eh", "umm", "uhh", "err", "ahh", "ehh", "hmm", "hm", "mm", "mmm", "erm", "urm", "ugh"]
+
+    var fillerWords: [String] {
+        get {
+            if let stored = defaults.array(forKey: Keys.fillerWords) as? [String] {
+                return stored
+            }
+            return Self.defaultFillerWords
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.fillerWords)
+        }
+    }
+
+    var removeFillerWordsEnabled: Bool {
+        get { defaults.object(forKey: Keys.removeFillerWordsEnabled) as? Bool ?? true }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.removeFillerWordsEnabled)
+        }
+    }
+    
+    // MARK: - Transcription Provider (ASR)
+    
+    /// Available transcription providers
+    enum TranscriptionProviderOption: String, CaseIterable, Identifiable {
+        case auto = "auto"
+        case fluidAudio = "fluidAudio"
+        case whisper = "whisper"
+        
+        var id: String { rawValue }
+        
+        var displayName: String {
+            switch self {
+            case .auto: return "Automatic (Recommended)"
+            case .fluidAudio: return "FluidAudio (Apple Silicon)"
+            case .whisper: return "Whisper (Intel/Universal)"
+            }
+        }
+        
+        var description: String {
+            switch self {
+            case .auto: return "Uses FluidAudio on Apple Silicon, Whisper on Intel"
+            case .fluidAudio: return "Fast CoreML-based transcription optimized for M-series chips"
+            case .whisper: return "whisper.cpp - works on any Mac, useful for testing"
+            }
+        }
+    }
+    
+    /// Selected transcription provider - defaults to "auto" which picks based on architecture
+    var selectedTranscriptionProvider: TranscriptionProviderOption {
+        get {
+            guard let rawValue = defaults.string(forKey: Keys.selectedTranscriptionProvider),
+                  let option = TranscriptionProviderOption(rawValue: rawValue) else {
+                return .auto
+            }
+            return option
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue.rawValue, forKey: Keys.selectedTranscriptionProvider)
+        }
     }
 }

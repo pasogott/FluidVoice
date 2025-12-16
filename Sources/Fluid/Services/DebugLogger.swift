@@ -8,6 +8,22 @@ class DebugLogger: ObservableObject {
     @Published var logs: [LogEntry] = []
     private let maxLogs = 1000 // Keep last 1000 log entries
     private let queue = DispatchQueue(label: "debug.logger", qos: .utility)
+    
+    // IMPORTANT: Cached setting to avoid circular dependency with SettingsStore
+    // During SettingsStore.init(), if an error is logged, accessing SettingsStore.shared
+    // would cause a recursive dispatch_once deadlock. We use a cached value instead.
+    private var _loggingEnabledCache: Bool?
+    private var loggingEnabled: Bool {
+        if let cached = _loggingEnabledCache {
+            return cached
+        }
+        // Delay access to SettingsStore until after initial singleton setup
+        // Use UserDefaults directly to avoid the circular dependency
+        let enabled = UserDefaults.standard.bool(forKey: "EnableDebugLogs")
+        _loggingEnabledCache = enabled
+        return enabled
+    }
+    
     private static let logFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss.SSS"
@@ -51,8 +67,13 @@ class DebugLogger: ObservableObject {
     
     private init() {}
     
+    /// Refresh the cached logging setting (call after SettingsStore is fully initialized)
+    func refreshLoggingEnabled() {
+        _loggingEnabledCache = UserDefaults.standard.bool(forKey: "EnableDebugLogs")
+    }
+    
     func log(_ message: String, level: LogLevel = .info, source: String = "App") {
-        let loggingEnabled = SettingsStore.shared.enableDebugLogs
+        let loggingEnabled = self.loggingEnabled
 
         queue.async {
             let timestamp = Date()

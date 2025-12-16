@@ -32,6 +32,12 @@ struct SettingsView: View {
     @Binding var enableStreamingPreview: Bool
     @Binding var copyToClipboard: Bool
     
+    // CRITICAL FIX: Cache default device names to avoid CoreAudio calls during view body evaluation.
+    // Querying AudioDevice.getDefaultInputDevice() in the view body triggers HALSystem::InitializeShell()
+    // which races with SwiftUI's AttributeGraph metadata processing and causes EXC_BAD_ACCESS crashes.
+    @State private var cachedDefaultInputName: String = ""
+    @State private var cachedDefaultOutputName: String = ""
+    
     let hotkeyManager: GlobalHotkeyManager?
     let menuBarManager: MenuBarManager
     let startRecording: () -> Void
@@ -502,6 +508,9 @@ struct SettingsView: View {
                             HStack(spacing: 10) {
                                 Button {
                                     refreshDevices()
+                                    // Update cached default device names on refresh
+                                    cachedDefaultInputName = AudioDevice.getDefaultInputDevice()?.name ?? ""
+                                    cachedDefaultOutputName = AudioDevice.getDefaultOutputDevice()?.name ?? ""
                                 } label: {
                                     Label("Refresh", systemImage: "arrow.clockwise")
                                 }
@@ -510,9 +519,10 @@ struct SettingsView: View {
 
                                 Spacer()
                                 
-                                if let defIn = AudioDevice.getDefaultInputDevice()?.name, 
-                                   let defOut = AudioDevice.getDefaultOutputDevice()?.name {
-                                    Text("Default: \(defIn) / \(defOut)")
+                                // CRITICAL FIX: Use cached values instead of querying CoreAudio in view body.
+                                // Querying AudioDevice here triggers HALSystem::InitializeShell() race condition.
+                                if !cachedDefaultInputName.isEmpty && !cachedDefaultOutputName.isEmpty {
+                                    Text("Default: \(cachedDefaultInputName) / \(cachedDefaultOutputName)")
                                         .font(.caption)
                                         .foregroundStyle(.tertiary)
                                         .lineLimit(1)
@@ -574,6 +584,89 @@ struct SettingsView: View {
                     .padding(16)
                 }
                 
+                // Transcription Engine Card
+                ThemedCard(style: .standard) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("Transcription Engine", systemImage: "waveform.badge.mic")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        VStack(alignment: .leading, spacing: 12) {
+                            // Current provider info
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(theme.palette.success)
+                                    .frame(width: 8, height: 8)
+                                Text("Active: \(asr.activeProviderName)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                
+                                Spacer()
+                                
+                                // Only show architecture badge when NOT in Auto mode
+                                if SettingsStore.shared.selectedTranscriptionProvider != .auto {
+                                    Text(CPUArchitecture.isAppleSilicon ? "Apple Silicon" : "Intel")
+                                        .font(.caption)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                                .fill(.quaternary)
+                                        )
+                                }
+                            }
+                            
+                            // Provider picker
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Engine")
+                                        .font(.body)
+                                    Text(SettingsStore.shared.selectedTranscriptionProvider.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Picker("", selection: Binding(
+                                    get: { SettingsStore.shared.selectedTranscriptionProvider },
+                                    set: { newValue in
+                                        SettingsStore.shared.selectedTranscriptionProvider = newValue
+                                        // Reset ASR to use new provider
+                                        asr.resetTranscriptionProvider()
+                                    }
+                                )) {
+                                    ForEach(SettingsStore.TranscriptionProviderOption.allCases) { option in
+                                        Text(option.displayName).tag(option)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .frame(width: 240)
+                            }
+                            
+                            // Note for developers
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: "info.circle.fill")
+                                    .foregroundStyle(theme.palette.accent)
+                                    .font(.caption)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("For Development/Testing")
+                                        .font(.caption.weight(.medium))
+                                    Text("Use \"Whisper\" to test Intel Mac experience on Apple Silicon. FluidAudio provides best performance on M-series chips.")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .fill(theme.palette.accent.opacity(0.1))
+                            )
+                        }
+                    }
+                    .padding(16)
+                }
+
                 // Debug Settings Card
                 ThemedCard(style: .standard) {
                     VStack(alignment: .leading, spacing: 14) {
@@ -607,6 +700,10 @@ struct SettingsView: View {
         }
         .onAppear {
             refreshDevices()
+            // CRITICAL FIX: Populate cached default device names after onAppear, not during view body evaluation.
+            // This avoids the CoreAudio/SwiftUI AttributeGraph race condition that causes EXC_BAD_ACCESS.
+            cachedDefaultInputName = AudioDevice.getDefaultInputDevice()?.name ?? ""
+            cachedDefaultOutputName = AudioDevice.getDefaultOutputDevice()?.name ?? ""
         }
         .onChange(of: visualizerNoiseThreshold) { newValue in
             SettingsStore.shared.visualizerNoiseThreshold = newValue
@@ -783,6 +880,116 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Filler Words Editor
 
+struct FillerWordsEditor: View {
+    @State private var fillerWords: [String] = SettingsStore.shared.fillerWords
+    @State private var newWord: String = ""
+    @Environment(\.theme) private var theme
 
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Filler words to remove:")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
 
+            // Word chips
+            FlowLayout(spacing: 6) {
+                ForEach(fillerWords, id: \.self) { word in
+                    HStack(spacing: 4) {
+                        Text(word)
+                            .font(.caption)
+                        Button {
+                            removeWord(word)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(.quaternary)
+                    )
+                }
+            }
+
+            // Add new word
+            HStack(spacing: 8) {
+                TextField("Add word", text: $newWord)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 100)
+                    .onSubmit { addWord() }
+
+                Button("Add") { addWord() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(newWord.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                Spacer()
+
+                Button("Reset") {
+                    fillerWords = SettingsStore.defaultFillerWords
+                    SettingsStore.shared.fillerWords = fillerWords
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private func addWord() {
+        let word = newWord.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !word.isEmpty, !fillerWords.contains(word) else { return }
+        fillerWords.append(word)
+        SettingsStore.shared.fillerWords = fillerWords
+        newWord = ""
+    }
+
+    private func removeWord(_ word: String) {
+        fillerWords.removeAll { $0 == word }
+        SettingsStore.shared.fillerWords = fillerWords
+    }
+}
+
+// MARK: - Flow Layout
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+        }
+
+        return (CGSize(width: maxWidth, height: y + rowHeight), positions)
+    }
+}

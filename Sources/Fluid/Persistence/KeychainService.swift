@@ -24,77 +24,54 @@ final class KeychainService {
     static let shared = KeychainService()
 
     private let service = "com.fluidvoice.provider-api-keys"
+    private let account = "fluidApiKeys"
 
     private init() {}
 
+    // MARK: - Public API
+
     func storeKey(_ key: String, for providerID: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let data = trimmed.data(using: .utf8) else {
-            throw KeychainServiceError.invalidData
-        }
-
-        var attributes = baseQuery(for: providerID)
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        attributes[kSecValueData as String] = data
-
-        let status = SecItemAdd(attributes as CFDictionary, nil)
-
-        switch status {
-        case errSecSuccess:
-            return
-        case errSecDuplicateItem:
-            let updateStatus = SecItemUpdate(baseQuery(for: providerID) as CFDictionary,
-                                             [kSecValueData as String: data] as CFDictionary)
-            guard updateStatus == errSecSuccess else {
-                throw KeychainServiceError.unhandled(updateStatus)
-            }
-        default:
-            throw KeychainServiceError.unhandled(status)
-        }
+        var keys = try loadStoredKeys()
+        keys[providerID] = trimmed
+        try saveStoredKeys(keys)
     }
 
     func fetchKey(for providerID: String) throws -> String? {
-        var query = baseQuery(for: providerID)
-        query[kSecReturnData as String] = kCFBooleanTrue
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-
-        switch status {
-        case errSecSuccess:
-            guard let data = item as? Data,
-                  let key = String(data: data, encoding: .utf8) else {
-                throw KeychainServiceError.invalidData
-            }
-            return key
-        case errSecItemNotFound:
-            return nil
-        default:
-            throw KeychainServiceError.unhandled(status)
-        }
+        let keys = try loadStoredKeys()
+        return keys[providerID]
     }
 
     func deleteKey(for providerID: String) throws {
-        let status = SecItemDelete(baseQuery(for: providerID) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw KeychainServiceError.unhandled(status)
-        }
+        var keys = try loadStoredKeys()
+        guard keys.removeValue(forKey: providerID) != nil else { return }
+        try saveStoredKeys(keys)
     }
 
     func containsKey(for providerID: String) -> Bool {
-        var query = baseQuery(for: providerID)
-        query[kSecReturnData as String] = kCFBooleanFalse
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-        let status = SecItemCopyMatching(query as CFDictionary, nil)
-        return status == errSecSuccess
+        guard let keys = try? loadStoredKeys() else { return false }
+        return keys[providerID] != nil
     }
 
     func allProviderIDs() throws -> [String] {
+        return try loadStoredKeys().keys.sorted()
+    }
+
+    func fetchAllKeys() throws -> [String: String] {
+        try loadStoredKeys()
+    }
+
+    func storeAllKeys(_ values: [String: String]) throws {
+        try saveStoredKeys(values)
+    }
+
+    func legacyProviderEntries() throws -> [String: String] {
+        var result: [String: String] = [:]
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecReturnAttributes as String: true,
+            kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitAll
         ]
 
@@ -103,16 +80,104 @@ final class KeychainService {
 
         switch status {
         case errSecSuccess:
-            guard let attributesArray = items as? [[String: Any]] else { return [] }
-            return attributesArray.compactMap { $0[kSecAttrAccount as String] as? String }
+            guard let attributesArray = items as? [[String: Any]] else { return [:] }
+            for attributes in attributesArray {
+                guard let providerID = attributes[kSecAttrAccount as String] as? String,
+                      providerID != account,
+                      let data = attributes[kSecValueData as String] as? Data,
+                      let key = String(data: data, encoding: .utf8) else {
+                    continue
+                }
+                result[providerID] = key
+            }
+            return result
         case errSecItemNotFound:
-            return []
+            return [:]
         default:
             throw KeychainServiceError.unhandled(status)
         }
     }
 
-    private func baseQuery(for providerID: String) -> [String: Any] {
+    func removeLegacyEntries(providerIDs: [String]? = nil) throws {
+        let targets: [String]
+        if let providerIDs {
+            targets = providerIDs
+        } else {
+            targets = Array((try legacyProviderEntries()).keys)
+        }
+
+        for providerID in targets {
+            let status = SecItemDelete(legacyQuery(for: providerID) as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw KeychainServiceError.unhandled(status)
+            }
+        }
+    }
+
+    // MARK: - Private helpers
+
+    private func loadStoredKeys() throws -> [String: String] {
+        var query = aggregatedQuery()
+        query[kSecReturnData as String] = kCFBooleanTrue
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+
+        switch status {
+        case errSecSuccess:
+            guard let data = item as? Data else {
+                throw KeychainServiceError.invalidData
+            }
+            if data.isEmpty {
+                return [:]
+            }
+            do {
+                return try JSONDecoder().decode([String: String].self, from: data)
+            } catch {
+                throw KeychainServiceError.invalidData
+            }
+        case errSecItemNotFound:
+            return [:]
+        default:
+            throw KeychainServiceError.unhandled(status)
+        }
+    }
+
+    private func saveStoredKeys(_ keys: [String: String]) throws {
+        let data = try JSONEncoder().encode(keys)
+
+        var attributes = aggregatedQuery()
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        attributes[kSecValueData as String] = data
+
+        let status = SecItemAdd(attributes as CFDictionary, nil)
+
+        switch status {
+        case errSecSuccess:
+            try removeLegacyEntries()
+            return
+        case errSecDuplicateItem:
+            let updateStatus = SecItemUpdate(aggregatedQuery() as CFDictionary,
+                                             [kSecValueData as String: data] as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw KeychainServiceError.unhandled(updateStatus)
+            }
+            try removeLegacyEntries()
+        default:
+            throw KeychainServiceError.unhandled(status)
+        }
+    }
+
+    private func aggregatedQuery() -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+    }
+
+    private func legacyQuery(for providerID: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
