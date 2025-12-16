@@ -48,6 +48,7 @@ final class SettingsStore: ObservableObject
         static let commandModeHotkeyShortcut = "CommandModeHotkeyShortcut"
         static let commandModeConfirmBeforeExecute = "CommandModeConfirmBeforeExecute"
         static let commandModeLinkedToGlobal = "CommandModeLinkedToGlobal"
+        static let commandModeShortcutEnabled = "CommandModeShortcutEnabled"
         
         // Rewrite Mode Keys
         static let rewriteModeHotkeyShortcut = "RewriteModeHotkeyShortcut"
@@ -57,6 +58,7 @@ final class SettingsStore: ObservableObject
         
         // Model Reasoning Config Keys
         static let modelReasoningConfigs = "ModelReasoningConfigs"
+        static let rewriteModeShortcutEnabled = "RewriteModeShortcutEnabled"
         
         // Stats Keys
         static let userTypingWPM = "UserTypingWPM"
@@ -412,6 +414,18 @@ final class SettingsStore: ObservableObject
         }
     }
     
+    var commandModeShortcutEnabled: Bool
+    {
+        get {
+            let value = defaults.object(forKey: Keys.commandModeShortcutEnabled)
+            return value as? Bool ?? true
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.commandModeShortcutEnabled)
+        }
+    }
+    
     var commandModeHotkeyShortcut: HotkeyShortcut
     {
         get
@@ -577,6 +591,18 @@ final class SettingsStore: ObservableObject
     func hasCustomReasoningConfig(forModel model: String, provider: String) -> Bool {
         let key = "\(provider):\(model)"
         return modelReasoningConfigs[key] != nil
+    }
+    
+    var rewriteModeShortcutEnabled: Bool
+    {
+        get {
+            let value = defaults.object(forKey: Keys.rewriteModeShortcutEnabled)
+            return value as? Bool ?? true
+        }
+        set {
+            objectWillChange.send()
+            defaults.set(newValue, forKey: Keys.rewriteModeShortcutEnabled)
+        }
     }
     
     // MARK: - Stats Settings

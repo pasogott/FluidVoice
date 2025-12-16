@@ -26,6 +26,8 @@ struct SettingsView: View {
     @Binding var isRecordingCommandModeShortcut: Bool
     @Binding var rewriteShortcut: HotkeyShortcut
     @Binding var isRecordingRewriteShortcut: Bool
+    @Binding var commandModeShortcutEnabled: Bool
+    @Binding var rewriteShortcutEnabled: Bool
     @Binding var hotkeyManagerInitialized: Bool
     @Binding var pressAndHoldModeEnabled: Bool
     @Binding var enableStreamingPreview: Bool
@@ -294,6 +296,7 @@ struct SettingsView: View {
                                         description: "Execute voice commands",
                                         shortcut: commandModeShortcut,
                                         isRecording: isRecordingCommandModeShortcut,
+                                        isEnabled: $commandModeShortcutEnabled,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new command mode shortcut", source: "SettingsView")
                                             isRecordingCommandModeShortcut = true
@@ -309,6 +312,7 @@ struct SettingsView: View {
                                         description: "Select text and speak how to rewrite, or write new content",
                                         shortcut: rewriteShortcut,
                                         isRecording: isRecordingRewriteShortcut,
+                                        isEnabled: $rewriteShortcutEnabled,
                                         onChangePressed: {
                                             DebugLogger.shared.debug("Starting to record new write mode shortcut", source: "SettingsView")
                                             isRecordingRewriteShortcut = true
@@ -708,56 +712,74 @@ struct SettingsView: View {
         description: String,
         shortcut: HotkeyShortcut,
         isRecording: Bool,
+        isEnabled: Binding<Bool>? = nil,
         onChangePressed: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .foregroundStyle(iconColor)
-                .frame(width: 20)
-            
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.body)
-                Text(description)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+        let enabledValue = isEnabled?.wrappedValue ?? true
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundStyle(iconColor)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.body)
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+                
+                if let isEnabled {
+                    Toggle("", isOn: isEnabled)
+                        .toggleStyle(.switch)
+                        .tint(theme.palette.accent)
+                        .labelsHidden()
+                }
             }
-            
-            Spacer()
-            
-            if isRecording {
-                Text("Press shortcut...")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(.orange.opacity(0.2))
-                    )
-            } else {
-                Text(shortcut.displayString)
-                    .font(.caption.monospaced().weight(.medium))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .fill(.quaternary.opacity(0.5))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .stroke(.primary.opacity(0.15), lineWidth: 1)
-                            )
-                    )
+
+            HStack(spacing: 10) {
+                Color.clear
+                    .frame(width: 20)
+
+                if isRecording && enabledValue {
+                    Text("Press shortcut...")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(.orange.opacity(0.2))
+                        )
+                } else {
+                    Text(shortcut.displayString)
+                        .font(.caption.monospaced().weight(.medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .fill(.quaternary.opacity(0.5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .stroke(.primary.opacity(0.15), lineWidth: 1)
+                                )
+                        )
+                }
+
+                Button("Change") {
+                    onChangePressed()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(isRecording || !enabledValue)
             }
-            
-            Button("Change") {
-                onChangePressed()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(isRecording)
         }
+        .opacity(enabledValue ? 1 : 0.7)
     }
 }
 
