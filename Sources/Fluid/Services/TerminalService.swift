@@ -152,9 +152,20 @@ final class TerminalService {
             return json
         }
 
-        // Fallback
-        return """
-        {"success": \(result.success), "output": "\(result.output)", "exitCode": \(result.exitCode)}
-        """
+        // Fallback: always return valid JSON (avoid manual string interpolation of output)
+        let fallbackPayload: [String: Any] = [
+            "success": result.success,
+            "output": result.output,
+            "exitCode": Int(result.exitCode),
+        ]
+
+        if let data = try? JSONSerialization.data(withJSONObject: fallbackPayload, options: [.sortedKeys]),
+           let json = String(data: data, encoding: .utf8)
+        {
+            return json
+        }
+
+        // If serialization fails for any reason, return minimal safe JSON
+        return #"{"success":false,"output":"<json-serialization-failed>","exitCode":-1}"#
     }
 }
