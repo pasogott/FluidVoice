@@ -214,6 +214,7 @@ final class RewriteModeService: ObservableObject {
             streaming: enableStreaming,
             tools: [],
             temperature: isReasoningModel ? nil : 0.7,
+            maxTokens: isReasoningModel ? 4096 : nil, // Reasoning models like o1 need a budget for thoughts
             extraParameters: extraParams
         )
 

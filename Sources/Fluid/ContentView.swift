@@ -1781,22 +1781,16 @@ struct ContentView: View {
 
             await MainActor.run {
                 self.hotkeyManagerInitialized = self.hotkeyManager?.validateEventTapHealth() ?? false
-                if UserDefaults.standard.bool(forKey: "enableDebugLogs") {
-                    print("[ContentView] Initial hotkey manager health check: \(self.hotkeyManagerInitialized)")
-                }
+                DebugLogger.shared.debug("Initial hotkey manager health check: \(self.hotkeyManagerInitialized)", source: "ContentView")
 
                 // If still not initialized and accessibility is enabled, try reinitializing
                 if !self.hotkeyManagerInitialized && self.accessibilityEnabled {
                     self.hotkeyManagerInitialized = self.hotkeyManager?.validateEventTapHealth() ?? false
-                    if UserDefaults.standard.bool(forKey: "enableDebugLogs") {
-                        print("[ContentView] Initial hotkey manager health check: \(self.hotkeyManagerInitialized)")
-                    }
+                    DebugLogger.shared.debug("Initial hotkey manager health check: \(self.hotkeyManagerInitialized)", source: "ContentView")
 
                     // If still not initialized and accessibility is enabled, try reinitializing
                     if !self.hotkeyManagerInitialized && self.accessibilityEnabled {
-                        if UserDefaults.standard.bool(forKey: "enableDebugLogs") {
-                            print("[ContentView] Hotkey manager not healthy, attempting reinitalization")
-                        }
+                        DebugLogger.shared.debug("Hotkey manager not healthy, attempting reinitalization", source: "ContentView")
                         self.hotkeyManager?.reinitialize()
                     }
                 }

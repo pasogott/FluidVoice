@@ -162,6 +162,7 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.enableDebugLogs)
+            DebugLogger.shared.refreshLoggingEnabled()
         }
     }
 
