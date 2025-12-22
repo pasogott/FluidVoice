@@ -39,6 +39,8 @@ final class SettingsStore: ObservableObject {
         static let copyTranscriptionToClipboard = "CopyTranscriptionToClipboard"
         static let autoUpdateCheckEnabled = "AutoUpdateCheckEnabled"
         static let lastUpdateCheckDate = "LastUpdateCheckDate"
+        static let updatePromptSnoozedUntil = "UpdatePromptSnoozedUntil"
+        static let snoozedUpdateVersion = "SnoozedUpdateVersion"
         static let playgroundUsed = "PlaygroundUsed"
 
         // Command Mode Keys
@@ -382,13 +384,57 @@ final class SettingsStore: ObservableObject {
             return true
         }
 
-        // Check if more than 24 hours have passed
-        let dayInSeconds: TimeInterval = 24 * 60 * 60
-        return Date().timeIntervalSince(lastCheck) >= dayInSeconds
+        // Check if more than 1 hour has passed
+        let hourInSeconds: TimeInterval = 60 * 60
+        return Date().timeIntervalSince(lastCheck) >= hourInSeconds
     }
 
     func updateLastCheckDate() {
         self.lastUpdateCheckDate = Date()
+    }
+
+    // MARK: - Update Prompt Snooze
+
+    /// Date until which update prompts are snoozed (user clicked "Later")
+    var updatePromptSnoozedUntil: Date? {
+        get { self.defaults.object(forKey: Keys.updatePromptSnoozedUntil) as? Date }
+        set { self.defaults.set(newValue, forKey: Keys.updatePromptSnoozedUntil) }
+    }
+
+    /// The version that was snoozed (to allow prompting for newer versions)
+    var snoozedUpdateVersion: String? {
+        get { self.defaults.string(forKey: Keys.snoozedUpdateVersion) }
+        set { self.defaults.set(newValue, forKey: Keys.snoozedUpdateVersion) }
+    }
+
+    /// Check if we should show the update prompt for a given version
+    /// Returns false if user snoozed this version within the last 24 hours
+    func shouldShowUpdatePrompt(forVersion version: String) -> Bool {
+        // If a different (newer) version is available, always show
+        if let snoozedVersion = snoozedUpdateVersion, snoozedVersion != version {
+            return true
+        }
+
+        // Check if snooze period has expired
+        guard let snoozedUntil = updatePromptSnoozedUntil else {
+            return true // Never snoozed, show prompt
+        }
+
+        return Date() >= snoozedUntil
+    }
+
+    /// Snooze update prompts for 24 hours for the given version
+    func snoozeUpdatePrompt(forVersion version: String) {
+        let snoozeUntil = Date().addingTimeInterval(24 * 60 * 60) // 24 hours
+        self.updatePromptSnoozedUntil = snoozeUntil
+        self.snoozedUpdateVersion = version
+        DebugLogger.shared.info("Update prompt snoozed for version \(version) until \(snoozeUntil)", source: "SettingsStore")
+    }
+
+    /// Clear the snooze (e.g., when update is installed)
+    func clearUpdateSnooze() {
+        self.updatePromptSnoozedUntil = nil
+        self.snoozedUpdateVersion = nil
     }
 
     var playgroundUsed: Bool {
