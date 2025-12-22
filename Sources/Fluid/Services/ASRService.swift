@@ -193,11 +193,14 @@ final class ASRService: ObservableObject {
         self.ensureReadyTask = nil
         self.ensureReadyProviderKey = nil
 
-        // CRITICAL FIX: Immediately check if the NEW model's files exist on disk
+        // CRITICAL FIX: Check if the NEW model's files exist on disk
         // This prevents UI from showing "Download" when model is already downloaded
-        self.checkIfModelsExist()
-
-        DebugLogger.shared.info("ASRService: Provider reset complete, will initialize '\(newModel.displayName)' on next use", source: "ASRService")
+        // Use Task for async check to support providers like AppleSpeechAnalyzerProvider
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.checkIfModelsExistAsync()
+            DebugLogger.shared.info("ASRService: Provider reset complete, will initialize '\(newModel.displayName)' on next use", source: "ASRService")
+        }
     }
 
     // CRITICAL FIX (launch-time crash mitigation):
@@ -282,14 +285,17 @@ final class ASRService: ObservableObject {
 
         self.registerDefaultDeviceChangeListener()
 
-        // Check if models exist on disk (deferred from init to avoid FluidAudio/CoreML race)
-        self.checkIfModelsExist()
-
-        // Auto-load models if they exist on disk to avoid "Downloaded but not loaded" state
-        if self.modelsExistOnDisk {
-            DebugLogger.shared.info("Models found on disk, auto-loading...", source: "ASRService")
-            Task { [weak self] in
-                guard let self = self else { return }
+        // Check if models exist on disk and auto-load if present
+        // This is done in a Task to support async model detection (e.g., AppleSpeechAnalyzerProvider)
+        Task { [weak self] in
+            guard let self = self else { return }
+            
+            // Use async check to accurately detect models (especially for Apple Speech Analyzer)
+            await self.checkIfModelsExistAsync()
+            
+            // Auto-load models if they exist on disk to avoid "Downloaded but not loaded" state
+            if self.modelsExistOnDisk {
+                DebugLogger.shared.info("Models found on disk, auto-loading...", source: "ASRService")
                 do {
                     try await self.ensureAsrReady()
                     DebugLogger.shared.info("Models auto-loaded successfully on startup", source: "ASRService")
@@ -300,8 +306,34 @@ final class ASRService: ObservableObject {
         }
     }
 
-    /// Check if models exist on disk without loading them
+    /// Check if models exist on disk without loading them (synchronous).
+    /// 
+    /// **Note**: For `AppleSpeechAnalyzerProvider`, this returns a cached value that may be stale.
+    /// Use `checkIfModelsExistAsync()` for an up-to-date result.
     func checkIfModelsExist() {
+        self.modelsExistOnDisk = self.transcriptionProvider.modelsExistOnDisk()
+        DebugLogger.shared.debug("Models exist on disk: \(self.modelsExistOnDisk)", source: "ASRService")
+    }
+
+    /// Check if models exist on disk without loading them (async).
+    /// 
+    /// This method performs an accurate async check for providers that require it
+    /// (e.g., `AppleSpeechAnalyzerProvider` uses `SpeechTranscriber.installedLocales`).
+    func checkIfModelsExistAsync() async {
+        let model = SettingsStore.shared.selectedSpeechModel
+        
+        // For Apple Speech Analyzer, use the async refresh method
+        if model == .appleSpeechAnalyzer {
+            if #available(macOS 26.0, *) {
+                let provider = self.getAppleSpeechAnalyzerProvider()
+                let isInstalled = await provider.refreshModelsExistOnDiskAsync()
+                self.modelsExistOnDisk = isInstalled
+                DebugLogger.shared.debug("Models exist on disk (async): \(self.modelsExistOnDisk)", source: "ASRService")
+                return
+            }
+        }
+        
+        // For other providers, use the synchronous method
         self.modelsExistOnDisk = self.transcriptionProvider.modelsExistOnDisk()
         DebugLogger.shared.debug("Models exist on disk: \(self.modelsExistOnDisk)", source: "ASRService")
     }

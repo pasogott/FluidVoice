@@ -90,7 +90,10 @@ struct AISettingsView: View {
 
             // CRITICAL FIX: Refresh model status immediately on appear
             // This ensures the speech recognition card shows current download status
-            self.asr.checkIfModelsExist()
+            // Use async variant for accurate detection (especially for AppleSpeechAnalyzerProvider)
+            Task {
+                await self.asr.checkIfModelsExistAsync()
+            }
         }
         .onChange(of: self.enableAIProcessing) { _, newValue in
             SettingsStore.shared.enableAIProcessing = newValue
