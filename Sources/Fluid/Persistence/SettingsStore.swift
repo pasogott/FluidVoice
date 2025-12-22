@@ -68,6 +68,9 @@ final class SettingsStore: ObservableObject {
         static let fillerWords = "FillerWords"
         static let removeFillerWordsEnabled = "RemoveFillerWordsEnabled"
 
+        // Custom Dictionary
+        static let customDictionaryEntries = "CustomDictionaryEntries"
+
         // Transcription Provider (ASR)
         static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"
         static let whisperModelSize = "WhisperModelSize"
@@ -861,6 +864,48 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.removeFillerWordsEnabled)
+        }
+    }
+
+    // MARK: - Custom Dictionary
+
+    /// A custom dictionary entry that maps multiple misheard/alternate spellings to a correct replacement.
+    /// For example: ["fluid voice", "fluid boys"] -> "FluidVoice"
+    struct CustomDictionaryEntry: Codable, Identifiable, Hashable {
+        let id: UUID
+        /// Words/phrases to look for (case-insensitive matching)
+        var triggers: [String]
+        /// The correct replacement text
+        var replacement: String
+
+        init(triggers: [String], replacement: String) {
+            self.id = UUID()
+            self.triggers = triggers.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            self.replacement = replacement
+        }
+
+        init(id: UUID, triggers: [String], replacement: String) {
+            self.id = id
+            self.triggers = triggers.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            self.replacement = replacement
+        }
+    }
+
+    /// Custom dictionary entries for word replacement
+    var customDictionaryEntries: [CustomDictionaryEntry] {
+        get {
+            guard let data = defaults.data(forKey: Keys.customDictionaryEntries),
+                  let decoded = try? JSONDecoder().decode([CustomDictionaryEntry].self, from: data)
+            else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            objectWillChange.send()
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                self.defaults.set(encoded, forKey: Keys.customDictionaryEntries)
+            }
         }
     }
 
