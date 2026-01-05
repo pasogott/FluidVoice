@@ -782,6 +782,9 @@ struct AISettingsView: View {
 
             // API Keys Guide
             self.apiKeysGuideCard
+
+            // Advanced Settings Card
+            self.advancedSettingsCard
         }
     }
 
@@ -1481,5 +1484,77 @@ struct AISettingsView: View {
             .padding(14)
         }
         .modifier(CardAppearAnimation(delay: 0.2, appear: self.$appear))
+    }
+
+    // MARK: - Advanced Settings Card
+
+    private var advancedSettingsCard: some View {
+        ThemedCard(style: .prominent, hoverEffect: false) {
+            VStack(alignment: .leading, spacing: 12) {
+                // Header
+                HStack {
+                    Image(systemName: "gearshape.2.fill")
+                        .font(.title3)
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Advanced")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                }
+
+                Divider().padding(.vertical, 3)
+
+                // Custom Dictation Prompt Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Custom Dictation Prompt")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(self.theme.palette.primaryText)
+
+                    Text("Customize the AI system prompt used for dictation mode. Leave empty to use the default prompt.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.secondaryText)
+
+                    TextEditor(text: Binding(
+                        get: { SettingsStore.shared.customDictationPrompt },
+                        set: { SettingsStore.shared.customDictationPrompt = $0 }
+                    ))
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 100, maxHeight: 180)
+                    .scrollContentBackground(.hidden)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.ultraThinMaterial.opacity(0.3))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(.white.opacity(0.1), lineWidth: 1)
+                            )
+                    )
+                    .padding(2)
+
+                    HStack {
+                        Button("Reset to Default") {
+                            SettingsStore.shared.customDictationPrompt = ""
+                        }
+                        .buttonStyle(GlassButtonStyle())
+                        .disabled(SettingsStore.shared.customDictationPrompt.isEmpty)
+
+                        Spacer()
+
+                        if !SettingsStore.shared.customDictationPrompt.isEmpty {
+                            Label("Using custom prompt", systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(.green)
+                        } else {
+                            Label("Using default prompt", systemImage: "info.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .padding(14)
+        }
+        .modifier(CardAppearAnimation(delay: 0.3, appear: self.$appear))
     }
 }
