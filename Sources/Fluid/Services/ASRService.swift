@@ -426,7 +426,7 @@ final class ASRService: ObservableObject {
             DebugLogger.shared.debug("✅ startEngine() completed", source: "ASRService")
 
             DebugLogger.shared.debug("🎧 Setting up engine tap...", source: "ASRService")
-            self.setupEngineTap()
+            try self.setupEngineTap()
             DebugLogger.shared.debug("✅ Engine tap setup complete", source: "ASRService")
 
             self.isRunning = true
@@ -1062,19 +1062,51 @@ final class ASRService: ObservableObject {
         self.engine.inputNode.removeTap(onBus: 0)
     }
 
-    private func setupEngineTap() {
+    private func setupEngineTap() throws {
         DebugLogger.shared.debug("🎧 setupEngineTap() - ENTERED", source: "ASRService")
         let input = self.engine.inputNode
-        let inFormat = input.inputFormat(forBus: 0)
 
-        // Validate format before installing tap (VoiceInk approach)
-        // This prevents hanging if the format is invalid (0Hz/0ch)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else {
-            DebugLogger.shared.error(
-                "❌ INVALID INPUT FORMAT: \(inFormat.sampleRate)Hz \(inFormat.channelCount)ch - Cannot install tap!",
+        // On Intel Macs (especially after wake from sleep), the audio HAL may not have
+        // finished initializing even after engine.start() returns. The format can be
+        // temporarily 0Hz/0ch while the hardware negotiates with CoreAudio.
+        // We retry a few times with small delays to handle this race condition.
+        var inFormat = input.inputFormat(forBus: 0)
+        var retryCount = 0
+        let maxRetries = 5
+        let retryDelayMs: UInt32 = 100_000 // 100ms in microseconds
+
+        while inFormat.sampleRate == 0 || inFormat.channelCount == 0 {
+            retryCount += 1
+            if retryCount > maxRetries {
+                DebugLogger.shared.error(
+                    "❌ INVALID INPUT FORMAT after \(maxRetries) retries: \(inFormat.sampleRate)Hz \(inFormat.channelCount)ch - Cannot install tap!",
+                    source: "ASRService"
+                )
+                throw NSError(
+                    domain: "ASRService",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Audio input format is invalid (\(inFormat.sampleRate)Hz, \(inFormat.channelCount)ch). The microphone may still be initializing after wake from sleep. Please try again in a few seconds."]
+                )
+            }
+
+            DebugLogger.shared.warning(
+                "⏳ Input format not ready (attempt \(retryCount)/\(maxRetries)): \(inFormat.sampleRate)Hz \(inFormat.channelCount)ch - waiting 100ms...",
                 source: "ASRService"
             )
-            fatalError("AVAudioEngine input format is invalid. This should never happen with fresh engine instance.")
+
+            // Small synchronous delay to let HAL initialize
+            // Using usleep since we're on MainActor and need to block briefly
+            usleep(retryDelayMs)
+
+            // Re-query the format
+            inFormat = input.inputFormat(forBus: 0)
+        }
+
+        if retryCount > 0 {
+            DebugLogger.shared.info(
+                "✅ Input format became valid after \(retryCount) retries: \(inFormat.sampleRate)Hz \(inFormat.channelCount)ch",
+                source: "ASRService"
+            )
         }
 
         DebugLogger.shared.debug(
@@ -1108,7 +1140,7 @@ final class ASRService: ObservableObject {
             do {
                 try self.configureSession()
                 try self.startEngine()
-                self.setupEngineTap()
+                try self.setupEngineTap()
             } catch {}
         }
         // Nudge visualizer
@@ -1380,7 +1412,7 @@ final class ASRService: ObservableObject {
             try self.startEngine()
 
             DebugLogger.shared.debug("Setting up engine tap...", source: "ASRService")
-            self.setupEngineTap()
+            try self.setupEngineTap()
 
             // Start monitoring the new device
             self.startMonitoringDevice(device.id)

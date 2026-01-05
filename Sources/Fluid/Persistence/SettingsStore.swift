@@ -85,6 +85,9 @@ final class SettingsStore: ObservableObject {
         static let overlayPosition = "OverlayPosition"
         static let overlayBottomOffset = "OverlayBottomOffset"
         static let overlaySize = "OverlaySize"
+
+        // Custom Dictation Prompt
+        static let customDictationPrompt = "CustomDictationPrompt"
     }
 
     // MARK: - Model Reasoning Configuration
@@ -789,6 +792,17 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(max(1, min(200, newValue)), forKey: Keys.userTypingWPM) // Clamp 1-200
+        }
+    }
+
+    // MARK: - Custom Dictation Prompt
+
+    /// Custom system prompt for dictation mode. When empty, uses the default built-in prompt.
+    var customDictationPrompt: String {
+        get { self.defaults.string(forKey: Keys.customDictationPrompt) ?? "" }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.customDictationPrompt)
         }
     }
 
