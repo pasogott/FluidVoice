@@ -192,7 +192,6 @@ check_downloads.sh
 
 RELEASE_NOTES_*
 .cursor
-**.wav
 
 **.dmg
 **.dmg.zip
