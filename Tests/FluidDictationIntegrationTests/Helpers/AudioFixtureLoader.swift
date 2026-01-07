@@ -26,12 +26,14 @@ enum AudioFixtureLoader {
         let inputFile = try AVAudioFile(forReading: url)
         let inputFormat = inputFile.processingFormat
 
-        let desiredFormat = AVAudioFormat(
+        guard let desiredFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16_000,
             channels: 1,
             interleaved: false
-        )!
+        ) else {
+            throw LoaderError.unsupportedAudio("Could not create desired audio format (16kHz mono Float32).")
+        }
 
         // Fast-path: already 16k mono float
         if inputFormat.sampleRate == desiredFormat.sampleRate,
