@@ -229,6 +229,7 @@ struct ShimmerText: View {
 struct NotchExpandedView: View {
     let audioPublisher: AnyPublisher<CGFloat, Never>
     @ObservedObject private var contentState = NotchContentState.shared
+    @ObservedObject private var settings = SettingsStore.shared
 
     private var modeColor: Color {
         self.contentState.mode.notchColor
@@ -261,6 +262,18 @@ struct NotchExpandedView: View {
         self.contentState.mode == .command && !self.contentState.commandConversationHistory.isEmpty
     }
 
+    private var isDictationMode: Bool {
+        self.contentState.mode == .dictation
+    }
+
+    private var selectedPromptLabel: String {
+        if let profile = self.settings.selectedDictationPromptProfile {
+            let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? "Untitled" : name
+        }
+        return "Default"
+    }
+
     var body: some View {
         VStack(spacing: 4) {
             // Visualization + Mode label row
@@ -289,6 +302,40 @@ struct NotchExpandedView: View {
                         .foregroundStyle(self.modeColor)
                         .opacity(0.9)
                 }
+            }
+
+            // Dictation prompt selector (only in dictation mode)
+            if self.isDictationMode && !self.contentState.isProcessing {
+                Menu {
+                    Button("Default") {
+                        self.settings.selectedDictationPromptID = nil
+                    }
+                    if !self.settings.dictationPromptProfiles.isEmpty {
+                        Divider()
+                        ForEach(self.settings.dictationPromptProfiles) { profile in
+                            Button(profile.name.isEmpty ? "Untitled" : profile.name) {
+                                self.settings.selectedDictationPromptID = profile.id
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Prompt:")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text(self.selectedPromptLabel)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .frame(maxWidth: 180)
+                .transition(.opacity)
             }
 
             // Transcription preview (single line, minimal)

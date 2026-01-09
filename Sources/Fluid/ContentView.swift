@@ -1144,10 +1144,12 @@ struct ContentView: View {
 
     /// Build a general system prompt with voice editing commands support
     private func buildSystemPrompt(appInfo: (name: String, bundleId: String, windowTitle: String)) -> String {
-        // Use custom prompt if set, otherwise use the default
-        let customPrompt = SettingsStore.shared.customDictationPrompt
-        if !customPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return customPrompt
+        // Use selected prompt profile (if any), otherwise use the default built-in prompt
+        if let profile = SettingsStore.shared.selectedDictationPromptProfile {
+            let prompt = profile.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !prompt.isEmpty {
+                return prompt
+            }
         }
 
         return """

@@ -281,6 +281,18 @@ struct BottomOverlayView: View {
         !self.contentState.transcriptionText.isEmpty
     }
 
+    private var isDictationMode: Bool {
+        self.contentState.mode == .dictation
+    }
+
+    private var selectedPromptLabel: String {
+        if let profile = self.settings.selectedDictationPromptProfile {
+            let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? "Untitled" : name
+        }
+        return "Default"
+    }
+
     // Show last ~60 characters of transcription on single line
     private var transcriptionSuffix: String {
         let text = self.contentState.transcriptionText
@@ -305,6 +317,40 @@ struct BottomOverlayView: View {
                 }
             }
             .frame(maxWidth: self.layout.waveformWidth * 2.2, minHeight: self.hasTranscription || self.contentState.isProcessing ? self.layout.transFontSize * 1.5 : 0)
+
+            // Dictation prompt selector (only in dictation mode)
+            if self.isDictationMode && !self.contentState.isProcessing {
+                Menu {
+                    Button("Default") {
+                        self.settings.selectedDictationPromptID = nil
+                    }
+                    if !self.settings.dictationPromptProfiles.isEmpty {
+                        Divider()
+                        ForEach(self.settings.dictationPromptProfiles) { profile in
+                            Button(profile.name.isEmpty ? "Untitled" : profile.name) {
+                                self.settings.selectedDictationPromptID = profile.id
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("Prompt:")
+                            .font(.system(size: self.layout.modeFontSize, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.5))
+                        Text(self.selectedPromptLabel)
+                            .font(.system(size: self.layout.modeFontSize, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: max(self.layout.modeFontSize - 2, 9), weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.45))
+                    }
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .frame(maxWidth: self.layout.waveformWidth * 2.0)
+                .transition(.opacity)
+            }
 
             // Waveform + Mode label row
             HStack(spacing: self.layout.hPadding / 1.5) {

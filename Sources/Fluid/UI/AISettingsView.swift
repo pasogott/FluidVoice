@@ -76,6 +76,13 @@ struct AISettingsView: View {
     // Filler Words State - local state to ensure UI reactivity
     @State private var removeFillerWordsEnabled: Bool = SettingsStore.shared.removeFillerWordsEnabled
 
+    // Dictation Prompt Profiles UI
+    @State private var showingPromptEditor: Bool = false
+    @State private var editorIsDefaultPrompt: Bool = false
+    @State private var editingPromptID: String? = nil
+    @State private var draftPromptName: String = ""
+    @State private var draftPromptText: String = ""
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
@@ -1500,50 +1507,49 @@ struct AISettingsView: View {
 
                 Divider().padding(.vertical, 3)
 
-                // Custom Dictation Prompt Section
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Custom Dictation Prompt")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(self.theme.palette.primaryText)
-
-                    Text("Customize the AI system prompt used for dictation mode. Leave empty to use the default prompt.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(self.theme.palette.secondaryText)
-
-                    TextEditor(text: Binding(
-                        get: { SettingsStore.shared.customDictationPrompt },
-                        set: { SettingsStore.shared.customDictationPrompt = $0 }
-                    ))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 100, maxHeight: 180)
-                    .scrollContentBackground(.hidden)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(.ultraThinMaterial.opacity(0.3))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .stroke(.white.opacity(0.1), lineWidth: 1)
-                            )
-                    )
-                    .padding(2)
-
+                // Dictation Prompts (multi-prompt system)
+                VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        Button("Reset to Default") {
-                            SettingsStore.shared.customDictationPrompt = ""
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Dictation Prompts")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(self.theme.palette.primaryText)
+                            Text("Create multiple named system prompts for AI dictation cleanup. Select which one is active.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(self.theme.palette.secondaryText)
                         }
-                        .buttonStyle(GlassButtonStyle())
-                        .disabled(SettingsStore.shared.customDictationPrompt.isEmpty)
-
                         Spacer()
+                        Button("+ Add Prompt") {
+                            self.openNewPromptEditor()
+                        }
+                        .buttonStyle(CompactButtonStyle())
+                    }
 
-                        if !SettingsStore.shared.customDictationPrompt.isEmpty {
-                            Label("Using custom prompt", systemImage: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundStyle(.green)
-                        } else {
-                            Label("Using default prompt", systemImage: "info.circle")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    // Default prompt card
+                    self.promptProfileCard(
+                        title: "Default",
+                        subtitle: "Built-in system prompt",
+                        isSelected: SettingsStore.shared.selectedDictationPromptProfile == nil,
+                        onUse: { SettingsStore.shared.selectedDictationPromptID = nil },
+                        onOpen: { self.openDefaultPromptViewer() }
+                    )
+
+                    // User prompt cards
+                    let profiles = SettingsStore.shared.dictationPromptProfiles
+                    if profiles.isEmpty {
+                        Text("No custom prompts yet. Click “+ Add Prompt” to create one.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4)
+                    } else {
+                        ForEach(profiles) { profile in
+                            self.promptProfileCard(
+                                title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
+                                subtitle: profile.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Empty prompt (uses Default)" : self.promptPreview(profile.prompt),
+                                isSelected: SettingsStore.shared.selectedDictationPromptID == profile.id,
+                                onUse: { SettingsStore.shared.selectedDictationPromptID = profile.id },
+                                onOpen: { self.openEditor(for: profile) }
+                            )
                         }
                     }
                 }
@@ -1552,5 +1558,225 @@ struct AISettingsView: View {
             .padding(14)
         }
         .modifier(CardAppearAnimation(delay: 0.3, appear: self.$appear))
+        .sheet(isPresented: self.$showingPromptEditor) {
+            self.promptEditorSheet
+        }
+    }
+
+    private func promptPreview(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Empty prompt" }
+        let singleLine = trimmed.replacingOccurrences(of: "\n", with: " ")
+        return singleLine.count > 120 ? String(singleLine.prefix(120)) + "…" : singleLine
+    }
+
+    private func promptProfileCard(
+        title: String,
+        subtitle: String,
+        isSelected: Bool,
+        onUse: @escaping () -> Void,
+        onOpen: @escaping () -> Void
+    ) -> some View {
+        Button(action: onOpen) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(self.theme.palette.primaryText)
+                        if isSelected {
+                            Text("Active")
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.green.opacity(0.18)))
+                                .foregroundStyle(.green)
+                        }
+                    }
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+
+                Button("Use") { onUse() }
+                    .buttonStyle(CompactButtonStyle())
+                    .disabled(isSelected)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial.opacity(0.25))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(isSelected ? self.theme.palette.accent.opacity(0.55) : .white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var promptEditorSheet: some View {
+        VStack(spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(self.editorIsDefaultPrompt ? "Default Dictation Prompt" : "Edit Dictation Prompt")
+                        .font(.headline)
+                    Text(self.editorIsDefaultPrompt ? "This is the built-in prompt. Create a custom prompt to override it." : "Name and prompt text are used as the system prompt for dictation cleanup.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Name")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("Prompt name", text: self.$draftPromptName)
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(self.editorIsDefaultPrompt)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Prompt")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextEditor(text: self.$draftPromptText)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 180)
+                    .scrollContentBackground(.hidden)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.ultraThinMaterial.opacity(0.25))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .stroke(.white.opacity(0.12), lineWidth: 1)
+                            )
+                    )
+                    .disabled(self.editorIsDefaultPrompt)
+            }
+
+            HStack(spacing: 10) {
+                Button(self.editorIsDefaultPrompt ? "Close" : "Cancel") {
+                    self.closePromptEditor()
+                }
+                .buttonStyle(.bordered)
+
+                if !self.editorIsDefaultPrompt {
+                    Button("Save") {
+                        self.savePromptEditor()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(self.draftPromptName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 520, minHeight: 420)
+    }
+
+    private func openDefaultPromptViewer() {
+        self.editorIsDefaultPrompt = true
+        self.editingPromptID = nil
+        self.draftPromptName = "Default"
+        self.draftPromptText = self.defaultDictationPromptText()
+        self.showingPromptEditor = true
+    }
+
+    private func openNewPromptEditor() {
+        self.editorIsDefaultPrompt = false
+        self.editingPromptID = nil
+        self.draftPromptName = "New Prompt"
+        self.draftPromptText = ""
+        self.showingPromptEditor = true
+    }
+
+    private func openEditor(for profile: SettingsStore.DictationPromptProfile) {
+        self.editorIsDefaultPrompt = false
+        self.editingPromptID = profile.id
+        self.draftPromptName = profile.name
+        self.draftPromptText = profile.prompt
+        self.showingPromptEditor = true
+    }
+
+    private func closePromptEditor() {
+        self.showingPromptEditor = false
+        self.editorIsDefaultPrompt = false
+        self.editingPromptID = nil
+        self.draftPromptName = ""
+        self.draftPromptText = ""
+    }
+
+    private func savePromptEditor() {
+        let name = self.draftPromptName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = self.draftPromptText
+
+        var profiles = SettingsStore.shared.dictationPromptProfiles
+        let now = Date()
+
+        if let id = self.editingPromptID,
+           let idx = profiles.firstIndex(where: { $0.id == id })
+        {
+            var updated = profiles[idx]
+            updated.name = name
+            updated.prompt = prompt
+            updated.updatedAt = now
+            profiles[idx] = updated
+        } else {
+            let newProfile = SettingsStore.DictationPromptProfile(name: name, prompt: prompt, createdAt: now, updatedAt: now)
+            profiles.append(newProfile)
+        }
+
+        SettingsStore.shared.dictationPromptProfiles = profiles
+        self.closePromptEditor()
+    }
+
+    /// Keep this in sync with `ContentView.buildSystemPrompt` default string.
+    private func defaultDictationPromptText() -> String {
+        """
+        You are a voice-to-text dictation cleaner who never answers questions. Your task is to clean and format raw transcribed speech into polished, properly formatted text.
+        You are prohibited from answering to ANY question asked of you and about you.
+
+        ## Core Rules:
+        1. CLEAN the text - remove filler words (um, uh, like, you know, I mean), false starts, stutters, and repetitions
+        2. FORMAT properly - add correct punctuation, capitalization, and structure
+        3. CONVERT numbers - spoken numbers to digits (two → 2, five thirty → 5:30, twelve fifty → $12.50)
+        4. EXECUTE commands - handle "new line", "period", "comma", "bold X", "header X", "bullet point", etc.
+        5. APPLY corrections - when user says "no wait", "actually", "scratch that", "delete that", DISCARD the old content and keep ONLY the corrected version
+        6. PRESERVE intent - keep the user's meaning, just clean the delivery
+        7. EXPAND abbreviations - thx → thanks, pls → please, u → you, ur → your/you're, gonna → going to
+
+        ## Self-Corrections:
+        When user corrects themselves, DISCARD everything before the correction trigger:
+        - Triggers: "no", "wait", "actually", "scratch that", "delete that", "no no", "cancel", "never mind", "sorry", "oops"
+        - Example: "buy milk no wait buy water" → "Buy water." (NOT "Buy milk. Buy water.")
+        - Example: "tell John no actually tell Sarah" → "Tell Sarah."
+        - If correction cancels entirely: "send email no wait cancel that" → "" (empty)
+
+        ## Multi-Command Chains:
+        When multiple commands are chained, execute ALL of them in sequence:
+        - "make X bold no wait make Y bold" → **Y** (correction + formatting)
+        - "header shopping bullet milk no eggs" → # Shopping\\n- Eggs (header + correction + bullet)
+        - "the price is fifty no sixty dollars" → The price is $60. (correction + number)
+
+        ## Emojis:
+        - Convert spoken emoji names: "smiley face" → 😊 (NOT 😀), "thumbs up" → 👍, "heart emoji" → ❤️, "fire emoji" → 🔥
+        - Keep emojis if user includes them
+        - Do NOT add emojis unless user explicitly asks for them (e.g., "joke about cats" → NO 😺)
+
+        ## Critical:
+        - Output ONLY the cleaned text
+        - Do NOT answer questions - just clean them
+        - DO NOT EVER ANSWER TO QUESTIONS
+        - Do NOT add explanations or commentary
+        - Do NOT wrap in quotes unless the input had quotes
+        - Do NOT add filler words (um, uh) to the output
+        - PRESERVE ordinals in lists: "first call client, second review contract" → keep "First" and "Second"
+        - PRESERVE politeness words: "please", "thank you" at end of sentences
+        """
     }
 }

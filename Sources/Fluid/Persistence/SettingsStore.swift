@@ -12,6 +12,7 @@ final class SettingsStore: ObservableObject {
     private init() {
         self.migrateProviderAPIKeysIfNeeded()
         self.scrubSavedProviderAPIKeys()
+        self.migrateDictationPromptProfilesIfNeeded()
     }
 
     // Keys
@@ -91,6 +92,78 @@ final class SettingsStore: ObservableObject {
 
         // Custom Dictation Prompt
         static let customDictationPrompt = "CustomDictationPrompt"
+
+        // Dictation Prompt Profiles (multi-prompt system)
+        static let dictationPromptProfiles = "DictationPromptProfiles"
+        static let selectedDictationPromptID = "SelectedDictationPromptID"
+    }
+
+    // MARK: - Dictation Prompt Profiles (Multi-prompt)
+
+    struct DictationPromptProfile: Codable, Identifiable, Hashable {
+        let id: String
+        var name: String
+        var prompt: String
+        var createdAt: Date
+        var updatedAt: Date
+
+        init(
+            id: String = UUID().uuidString,
+            name: String,
+            prompt: String,
+            createdAt: Date = Date(),
+            updatedAt: Date = Date()
+        ) {
+            self.id = id
+            self.name = name
+            self.prompt = prompt
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+        }
+    }
+
+    /// User-defined dictation prompt profiles (named system prompts for dictation cleanup).
+    /// The built-in default prompt is not stored here.
+    var dictationPromptProfiles: [DictationPromptProfile] {
+        get {
+            guard let data = self.defaults.data(forKey: Keys.dictationPromptProfiles),
+                  let decoded = try? JSONDecoder().decode([DictationPromptProfile].self, from: data)
+            else {
+                return []
+            }
+            return decoded
+        }
+        set {
+            objectWillChange.send()
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                self.defaults.set(encoded, forKey: Keys.dictationPromptProfiles)
+            } else {
+                // If encoding fails, avoid writing corrupt data.
+                self.defaults.removeObject(forKey: Keys.dictationPromptProfiles)
+            }
+        }
+    }
+
+    /// Selected dictation prompt profile ID. `nil` means "Default".
+    var selectedDictationPromptID: String? {
+        get {
+            let value = self.defaults.string(forKey: Keys.selectedDictationPromptID)
+            return value?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true ? nil : value
+        }
+        set {
+            objectWillChange.send()
+            if let id = newValue?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+                self.defaults.set(id, forKey: Keys.selectedDictationPromptID)
+            } else {
+                self.defaults.removeObject(forKey: Keys.selectedDictationPromptID)
+            }
+        }
+    }
+
+    /// Convenience: currently selected profile, or nil if Default/invalid selection.
+    var selectedDictationPromptProfile: DictationPromptProfile? {
+        guard let id = self.selectedDictationPromptID else { return nil }
+        return self.dictationPromptProfiles.first(where: { $0.id == id })
     }
 
     // MARK: - Model Reasoning Configuration
@@ -861,6 +934,36 @@ final class SettingsStore: ObservableObject {
         if didMutate {
             self.persistProviderAPIKeys(merged)
         }
+    }
+
+    private func migrateDictationPromptProfilesIfNeeded() {
+        // Migration path from legacy single prompt to multi-prompt profiles.
+        // If user had a legacy custom dictation prompt, convert it to a profile and select it.
+        let legacyPrompt = self.customDictationPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !legacyPrompt.isEmpty else { return }
+
+        // If profiles already exist, just clear the legacy prompt so we don't keep two sources of truth.
+        if self.dictationPromptProfiles.isEmpty == false {
+            self.customDictationPrompt = ""
+            // If selection points to nowhere, reset to default to avoid confusion.
+            if let id = self.selectedDictationPromptID,
+               self.dictationPromptProfiles.contains(where: { $0.id == id }) == false
+            {
+                self.selectedDictationPromptID = nil
+            }
+            return
+        }
+
+        let profile = DictationPromptProfile(
+            name: "My Custom Prompt",
+            prompt: legacyPrompt,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        self.dictationPromptProfiles = [profile]
+        self.selectedDictationPromptID = profile.id
+        self.customDictationPrompt = ""
+        DebugLogger.shared.info("Migrated legacy custom dictation prompt to a prompt profile", source: "SettingsStore")
     }
 
     private func scrubSavedProviderAPIKeys() {
