@@ -20,6 +20,7 @@ struct AISettingsView: View {
     @EnvironmentObject private var appServices: AppServices
     @EnvironmentObject private var menuBarManager: MenuBarManager
     @Environment(\.theme) private var theme
+    @ObservedObject private var promptTest = DictationPromptTestCoordinator.shared
 
     private var asr: ASRService { self.appServices.asr }
 
@@ -1660,7 +1661,120 @@ struct AISettingsView: View {
                             )
                     )
                     .disabled(self.editorIsDefaultPrompt)
+                    .onChange(of: self.draftPromptText) { _, newValue in
+                        self.promptTest.updateDraftPromptText(newValue)
+                    }
             }
+
+            // MARK: - Test Mode
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: "waveform")
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Test")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Spacer()
+                }
+
+                let hotkeyDisplay = SettingsStore.shared.hotkeyShortcut.displayString
+                let canTest = self.isAIPostProcessingConfiguredForDictation()
+
+                Toggle(isOn: Binding(
+                    get: { self.promptTest.isActive },
+                    set: { enabled in
+                        if enabled {
+                            self.promptTest.activate(draftPromptText: self.draftPromptText)
+                        } else {
+                            self.promptTest.deactivate()
+                        }
+                    }
+                )) {
+                    Text("Enable Test Mode (Hotkey: \(hotkeyDisplay))")
+                        .font(.caption)
+                }
+                .toggleStyle(.switch)
+                .disabled(!canTest)
+
+                if !canTest {
+                    Text("Testing is disabled because AI post-processing is not configured.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                } else if self.promptTest.isActive {
+                    Text("Press the hotkey to start/stop recording. The transcription will be post-processed using your draft prompt and shown below (nothing will be typed into other apps).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if self.promptTest.isActive {
+                    if self.promptTest.isProcessing {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Processing…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    if !self.promptTest.lastError.isEmpty {
+                        Text(self.promptTest.lastError)
+                            .font(.caption2)
+                            .foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Raw transcription")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: Binding(
+                            get: { self.promptTest.lastTranscriptionText },
+                            set: { _ in }
+                        ))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(minHeight: 70)
+                        .scrollContentBackground(.hidden)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(.ultraThinMaterial.opacity(0.25))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                                )
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Post-processed output")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: Binding(
+                            get: { self.promptTest.lastOutputText },
+                            set: { _ in }
+                        ))
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(minHeight: 110)
+                        .scrollContentBackground(.hidden)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(.ultraThinMaterial.opacity(0.25))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(.white.opacity(0.12), lineWidth: 1)
+                                )
+                        )
+                    }
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(self.theme.palette.accent.opacity(0.06))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(.white.opacity(0.10), lineWidth: 1)
+                    )
+            )
 
             HStack(spacing: 10) {
                 Button(self.editorIsDefaultPrompt ? "Close" : "Cancel") {
@@ -1679,6 +1793,9 @@ struct AISettingsView: View {
         }
         .padding()
         .frame(minWidth: 520, minHeight: 420)
+        .onDisappear {
+            self.promptTest.deactivate()
+        }
     }
 
     private func openDefaultPromptViewer() {
@@ -1711,6 +1828,13 @@ struct AISettingsView: View {
         self.editingPromptID = nil
         self.draftPromptName = ""
         self.draftPromptText = ""
+        self.promptTest.deactivate()
+    }
+
+    // MARK: - Prompt Test Gating
+
+    private func isAIPostProcessingConfiguredForDictation() -> Bool {
+        DictationAIPostProcessingGate.isConfigured()
     }
 
     private func savePromptEditor() {

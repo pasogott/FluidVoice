@@ -1239,7 +1239,7 @@ struct ContentView: View {
 
     // MARK: - Modular AI Processing
 
-    private func processTextWithAI(_ inputText: String) async -> String {
+    private func processTextWithAI(_ inputText: String, overrideSystemPrompt: String? = nil) async -> String {
         // CRITICAL FIX: Read current settings from SettingsStore, not stale @State copies
         // This ensures AI provider/model changes in AISettingsView take effect immediately
         let currentSelectedProviderID = SettingsStore.shared.selectedProviderID
@@ -1299,7 +1299,11 @@ struct ContentView: View {
 
         // Get app context captured at start of recording if available
         let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
-        let systemPrompt = self.buildSystemPrompt(appInfo: appInfo)
+        let systemPrompt: String = {
+            let override = overrideSystemPrompt?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !override.isEmpty { return override }
+            return self.buildSystemPrompt(appInfo: appInfo)
+        }()
         DebugLogger.shared.debug("Using app context for AI: app=\(appInfo.name), bundleId=\(appInfo.bundleId), title=\(appInfo.windowTitle)", source: "ContentView")
 
         // Check if this is a reasoning model that doesn't support temperature parameter
@@ -1400,6 +1404,31 @@ struct ContentView: View {
             return
         }
 
+        // Prompt Test Mode: reroute dictation hotkey output into the prompt editor (no typing/clipboard/history).
+        let promptTest = DictationPromptTestCoordinator.shared
+        if promptTest.isActive {
+            promptTest.lastTranscriptionText = transcribedText
+            promptTest.lastOutputText = ""
+            promptTest.lastError = ""
+
+            guard DictationAIPostProcessingGate.isConfigured() else {
+                promptTest.lastError = "AI post-processing is not configured. Enable AI Enhancement and configure a provider/model (and API key for non-local endpoints)."
+                return
+            }
+
+            promptTest.isProcessing = true
+            self.menuBarManager.setProcessing(true)
+            defer {
+                self.menuBarManager.setProcessing(false)
+                promptTest.isProcessing = false
+            }
+
+            let result = await self.processTextWithAI(transcribedText, overrideSystemPrompt: promptTest.draftPromptText)
+            let finalText = ASRService.applyGAAVFormatting(result)
+            promptTest.lastOutputText = finalText
+            return
+        }
+
         // If this was a rewrite recording, process the rewrite instead of typing
         if wasRewriteMode {
             DebugLogger.shared.info("Processing rewrite with instruction: \(transcribedText)", source: "ContentView")
@@ -1433,20 +1462,7 @@ struct ContentView: View {
         var finalText: String
 
         // Check if we should use AI processing
-        // IMPORTANT: Derive provider context from SettingsStore so AISettingsView changes take effect immediately.
-        let currentProviderID = SettingsStore.shared.selectedProviderID
-        let baseURL: String
-        if let saved = SettingsStore.shared.savedProviders.first(where: { $0.id == currentProviderID }) {
-            baseURL = saved.baseURL
-        } else if currentProviderID == "groq" {
-            baseURL = "https://api.groq.com/openai/v1"
-        } else {
-            baseURL = "https://api.openai.com/v1"
-        }
-        let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        let isLocal = self.isLocalEndpoint(trimmedBaseURL)
-        let apiKey = (SettingsStore.shared.getAPIKey(for: currentProviderID) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let shouldUseAI = SettingsStore.shared.enableAIProcessing && (isLocal || !apiKey.isEmpty)
+        let shouldUseAI = DictationAIPostProcessingGate.isConfigured()
 
         if shouldUseAI {
             DebugLogger.shared.debug("Routing transcription through AI post-processing", source: "ContentView")
