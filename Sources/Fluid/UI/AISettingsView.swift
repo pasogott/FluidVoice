@@ -25,6 +25,8 @@ struct AISettingsView: View {
 
     // MARK: - State Variables (moved from ContentView)
 
+    @ObservedObject private var settings = SettingsStore.shared
+
     @State private var appear = false
     @State private var openAIBaseURL: String = "https://api.openai.com/v1"
     @State private var enableAIProcessing: Bool = false
@@ -1529,13 +1531,13 @@ struct AISettingsView: View {
                     self.promptProfileCard(
                         title: "Default",
                         subtitle: "Built-in system prompt",
-                        isSelected: SettingsStore.shared.selectedDictationPromptProfile == nil,
-                        onUse: { SettingsStore.shared.selectedDictationPromptID = nil },
+                        isSelected: self.settings.selectedDictationPromptProfile == nil,
+                        onUse: { self.settings.selectedDictationPromptID = nil },
                         onOpen: { self.openDefaultPromptViewer() }
                     )
 
                     // User prompt cards
-                    let profiles = SettingsStore.shared.dictationPromptProfiles
+                    let profiles = self.settings.dictationPromptProfiles
                     if profiles.isEmpty {
                         Text("No custom prompts yet. Click “+ Add Prompt” to create one.")
                             .font(.caption)
@@ -1546,8 +1548,8 @@ struct AISettingsView: View {
                             self.promptProfileCard(
                                 title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
                                 subtitle: profile.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Empty prompt (uses Default)" : self.promptPreview(profile.prompt),
-                                isSelected: SettingsStore.shared.selectedDictationPromptID == profile.id,
-                                onUse: { SettingsStore.shared.selectedDictationPromptID = profile.id },
+                                isSelected: self.settings.selectedDictationPromptID == profile.id,
+                                onUse: { self.settings.selectedDictationPromptID = profile.id },
                                 onOpen: { self.openEditor(for: profile) }
                             )
                         }
@@ -1577,8 +1579,8 @@ struct AISettingsView: View {
         onUse: @escaping () -> Void,
         onOpen: @escaping () -> Void
     ) -> some View {
-        Button(action: onOpen) {
-            HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 10) {
+            Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Text(title)
@@ -1599,24 +1601,24 @@ struct AISettingsView: View {
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                 }
-
-                Spacer()
-
-                Button("Use") { onUse() }
-                    .buttonStyle(CompactButtonStyle())
-                    .disabled(isSelected)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(0.25))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(isSelected ? self.theme.palette.accent.opacity(0.55) : .white.opacity(0.12), lineWidth: 1)
-                    )
-            )
+            .buttonStyle(.plain)
+
+            Button("Use") { onUse() }
+                .buttonStyle(CompactButtonStyle())
+                .disabled(isSelected)
         }
-        .buttonStyle(.plain)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial.opacity(0.25))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isSelected ? self.theme.palette.accent.opacity(0.55) : .white.opacity(0.12), lineWidth: 1)
+                )
+        )
     }
 
     private var promptEditorSheet: some View {
