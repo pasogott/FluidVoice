@@ -1981,5 +1981,4 @@ struct AISettingsView: View {
         SettingsStore.shared.dictationPromptProfiles = profiles
         self.closePromptEditor()
     }
-
 }
