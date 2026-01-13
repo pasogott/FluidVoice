@@ -439,6 +439,17 @@ struct SettingsView: View {
                                     Divider().padding(.vertical, 8)
 
                                     self.optionToggleRow(
+                                        title: "Pause Media During Transcription",
+                                        description: "Automatically pause currently playing audio/video when transcription starts. Resumes only if FluidVoice paused it.",
+                                        isOn: Binding(
+                                            get: { SettingsStore.shared.pauseMediaDuringTranscription },
+                                            set: { SettingsStore.shared.pauseMediaDuringTranscription = $0 }
+                                        )
+                                    )
+
+                                    Divider().padding(.vertical, 8)
+
+                                    self.optionToggleRow(
                                         title: "Share Anonymous Analytics",
                                         description: "Send anonymous usage and performance metrics to help improve FluidVoice. Never includes transcription text or prompts.",
                                         isOn: self.analyticsToggleBinding

@@ -90,6 +90,9 @@ final class SettingsStore: ObservableObject {
         static let overlayBottomOffset = "OverlayBottomOffset"
         static let overlaySize = "OverlaySize"
 
+        // Media Playback Control
+        static let pauseMediaDuringTranscription = "PauseMediaDuringTranscription"
+
         // Custom Dictation Prompt
         static let customDictationPrompt = "CustomDictationPrompt"
 
@@ -1307,6 +1310,18 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.gaavModeEnabled)
+        }
+    }
+
+    // MARK: - Media Playback Control
+
+    /// When enabled, automatically pauses system media playback when transcription starts.
+    /// Only resumes if FluidVoice was the one that paused it.
+    var pauseMediaDuringTranscription: Bool {
+        get { self.defaults.object(forKey: Keys.pauseMediaDuringTranscription) as? Bool ?? false }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.pauseMediaDuringTranscription)
         }
     }
 

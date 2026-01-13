@@ -260,6 +260,10 @@ final class ASRService: ObservableObject {
     private var previousFullTranscription: String = ""
     private let transcriptionExecutor = TranscriptionExecutor() // Serializes all CoreML access
 
+    /// Tracks whether we paused system media for this recording session.
+    /// Used to resume playback only if we were the ones who paused it.
+    private var didPauseMediaForThisSession: Bool = false
+
     private var audioLevelSubject = PassthroughSubject<CGFloat, Never>()
     var audioLevelPublisher: AnyPublisher<CGFloat, Never> { self.audioLevelSubject.eraseToAnyPublisher() }
     private var lastAudioLevelSentAt: TimeInterval = 0
@@ -405,6 +409,22 @@ final class ASRService: ObservableObject {
             return
         }
 
+        // Reset media pause state for this session
+        self.didPauseMediaForThisSession = false
+
+        // Pause system media if the setting is enabled and something is playing
+        if SettingsStore.shared.pauseMediaDuringTranscription {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                // Only attempt pause if we're still in the "about to start" or "running" state
+                let didPause = await MediaPlaybackService.shared.pauseIfPlaying()
+                self.didPauseMediaForThisSession = didPause
+                if didPause {
+                    DebugLogger.shared.info("🎵 Paused system media for transcription", source: "ASRService")
+                }
+            }
+        }
+
         DebugLogger.shared.debug("🧹 Clearing buffers and state", source: "ASRService")
         self.finalText.removeAll()
         self.audioBuffer.clear(keepingCapacity: true) // specific optimization for restart
@@ -507,6 +527,20 @@ final class ASRService: ObservableObject {
             return ""
         }
 
+        // Capture media pause state before we reset it, for resuming at the end
+        let shouldResumeMedia = SettingsStore.shared.pauseMediaDuringTranscription && self.didPauseMediaForThisSession
+        self.didPauseMediaForThisSession = false // Reset for next session
+
+        // Resume media playback at the end of this function if we paused it
+        defer {
+            if shouldResumeMedia {
+                Task { @MainActor in
+                    await MediaPlaybackService.shared.resumeIfWePaused(true)
+                    DebugLogger.shared.info("🎵 Resumed system media after transcription", source: "ASRService")
+                }
+            }
+        }
+
         DebugLogger.shared.debug("📍 Preparing final transcription", source: "ASRService")
 
         // CRITICAL: Set isRunning to false FIRST to signal any in-flight chunks to abort early
@@ -599,6 +633,20 @@ final class ASRService: ObservableObject {
 
     func stopWithoutTranscription() async {
         guard self.isRunning else { return }
+
+        // Capture media pause state before we reset it, for resuming at the end
+        let shouldResumeMedia = SettingsStore.shared.pauseMediaDuringTranscription && self.didPauseMediaForThisSession
+        self.didPauseMediaForThisSession = false // Reset for next session
+
+        // Resume media playback at the end of this function if we paused it
+        defer {
+            if shouldResumeMedia {
+                Task { @MainActor in
+                    await MediaPlaybackService.shared.resumeIfWePaused(true)
+                    DebugLogger.shared.info("🎵 Resumed system media after stopping without transcription", source: "ASRService")
+                }
+            }
+        }
 
         DebugLogger.shared.info("🛑 Stopping recording - releasing audio devices", source: "ASRService")
 
