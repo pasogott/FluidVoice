@@ -197,6 +197,8 @@ final class ASRService: ObservableObject {
 
         self.isAsrReady = false
         self.modelsExistOnDisk = false
+        self.isLoadingModel = false
+        self.isDownloadingModel = false
         self.downloadProgress = nil
         self.hasCompletedFirstTranscription = false // Reset warm-up state when switching models
         self.stopDownloadProgressMonitor()

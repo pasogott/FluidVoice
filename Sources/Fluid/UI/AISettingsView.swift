@@ -263,6 +263,8 @@ struct AISettingsView: View {
     @State private var selectedSpeechProvider: SettingsStore.SpeechModel.Provider = .nvidia
     @State private var previewSpeechModel: SettingsStore.SpeechModel = SettingsStore.shared.selectedSpeechModel
     @State private var showAdvancedSpeechInfo: Bool = false
+    @State private var suppressSpeechProviderSync: Bool = false
+    @State private var skipNextSpeechModelSync: Bool = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -299,8 +301,13 @@ struct AISettingsView: View {
         }
         .onChange(of: self.settings.selectedSpeechModel) { _, newValue in
             // Keep preview in sync if the active model changes elsewhere
+            if self.skipNextSpeechModelSync {
+                self.skipNextSpeechModelSync = false
+                return
+            }
+            guard !self.suppressSpeechProviderSync else { return }
             self.previewSpeechModel = newValue
-            self.selectedSpeechProvider = newValue.provider
+            self.setSelectedSpeechProvider(newValue.provider)
         }
         .onChange(of: self.showKeychainPermissionAlert) { _, isPresented in
             guard isPresented else { return }
@@ -431,6 +438,7 @@ struct AISettingsView: View {
                 .padding(.vertical, 4)
                 .onChange(of: self.selectedSpeechProvider) { _, newProvider in
                     // Preview the first model in the new provider (do not activate)
+                    if self.previewSpeechModel.provider == newProvider { return }
                     if let firstModel = SettingsStore.SpeechModel.models(for: newProvider).first {
                         self.previewSpeechModel = firstModel
                     }
@@ -680,7 +688,7 @@ struct AISettingsView: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
             SettingsStore.shared.selectedSpeechModel = model
             self.previewSpeechModel = model
-            self.selectedSpeechProvider = model.provider
+            self.setSelectedSpeechProvider(model.provider)
         }
         self.asr.resetTranscriptionProvider()
         Task {
@@ -697,21 +705,32 @@ struct AISettingsView: View {
         let previousActive = SettingsStore.shared.selectedSpeechModel
 
         Task {
+            let shouldRestore = previousActive != model
+            let initialProvider = self.selectedSpeechProvider
             await MainActor.run {
+                if shouldRestore {
+                    self.suppressSpeechProviderSync = true
+                }
                 SettingsStore.shared.selectedSpeechModel = model
                 self.asr.resetTranscriptionProvider()
             }
 
-            await self.downloadModels()
-
-            if previousActive != model {
-                await MainActor.run {
+            defer {
+                Task { @MainActor in
+                    guard shouldRestore else { return }
                     if SettingsStore.shared.selectedSpeechModel == model {
+                        self.skipNextSpeechModelSync = true
                         SettingsStore.shared.selectedSpeechModel = previousActive
                         self.asr.resetTranscriptionProvider()
                     }
+                    if self.selectedSpeechProvider == initialProvider {
+                        self.previewSpeechModel = model
+                    }
+                    self.suppressSpeechProviderSync = false
                 }
             }
+
+            await self.downloadModels()
         }
     }
 
@@ -720,19 +739,30 @@ struct AISettingsView: View {
         let previousActive = SettingsStore.shared.selectedSpeechModel
 
         Task {
+            let shouldRestore = previousActive != model
+            let initialProvider = self.selectedSpeechProvider
             await MainActor.run {
+                if shouldRestore {
+                    self.suppressSpeechProviderSync = true
+                }
                 SettingsStore.shared.selectedSpeechModel = model
                 self.asr.resetTranscriptionProvider()
             }
 
-            await self.deleteModels()
-
-            if previousActive != model {
-                await MainActor.run {
+            defer {
+                Task { @MainActor in
+                    guard shouldRestore else { return }
+                    self.skipNextSpeechModelSync = true
                     SettingsStore.shared.selectedSpeechModel = previousActive
                     self.asr.resetTranscriptionProvider()
+                    if self.selectedSpeechProvider == initialProvider {
+                        self.previewSpeechModel = model
+                    }
+                    self.suppressSpeechProviderSync = false
                 }
             }
+
+            await self.deleteModels()
         }
     }
 
@@ -855,6 +885,10 @@ struct AISettingsView: View {
     }
 
     // MARK: - Helper Functions
+
+    private func setSelectedSpeechProvider(_ provider: SettingsStore.SpeechModel.Provider) {
+        self.selectedSpeechProvider = provider
+    }
 
     private func providerKey(for providerID: String) -> String {
         // Built-in providers use their ID directly
