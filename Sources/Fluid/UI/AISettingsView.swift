@@ -776,14 +776,39 @@ struct AISettingsView: View {
             ThemedCard(style: .prominent, hoverEffect: false) {
                 VStack(alignment: .leading, spacing: 12) {
                     // Header
-                    HStack {
-                        Image(systemName: "key.fill")
-                            .font(.title3)
-                            .foregroundStyle(self.theme.palette.accent)
-                        Text("API Configuration")
-                            .font(.headline)
-                            .fontWeight(.semibold)
+                    HStack(spacing: 12) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "key.fill")
+                                .font(.title3)
+                                .foregroundStyle(self.theme.palette.accent)
+                            Text("API Configuration")
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                        }
+
+                        // Compatibility Badge
+                        if self.selectedProviderID == "apple-intelligence" {
+                            HStack(spacing: 4) {
+                                Image(systemName: "apple.logo").font(.caption2)
+                                Text("On-device").font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.quaternary.opacity(0.5)))
+                        } else {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.seal.fill").font(.caption2)
+                                Text("OpenAI Compatible").font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.quaternary.opacity(0.5)))
+                        }
+
                         Spacer()
+
                         Button(action: { self.showHelp.toggle() }) {
                             Image(systemName: self.showHelp ? "questionmark.circle.fill" : "questionmark.circle")
                                 .font(.system(size: 20))
@@ -792,15 +817,29 @@ struct AISettingsView: View {
                         .buttonStyle(.plain)
                     }
 
-                    Divider().padding(.vertical, 3)
 
                     // AI Enhancement Toggle
                     self.aiEnhancementToggle
 
                     // Streaming Toggle
                     if self.enableAIProcessing && self.selectedProviderID != "apple-intelligence" {
-                        self.streamingToggle
-                        self.showThinkingTokensToggle
+                        HStack(spacing: 20) {
+                            Toggle("Enable Streaming", isOn: Binding(
+                                get: { SettingsStore.shared.enableAIStreaming },
+                                set: { SettingsStore.shared.enableAIStreaming = $0 }
+                            ))
+                            .toggleStyle(.checkbox)
+                            
+                            Toggle("Show Thinking Tokens", isOn: Binding(
+                                get: { SettingsStore.shared.showThinkingTokens },
+                                set: { SettingsStore.shared.showThinkingTokens = $0 }
+                            ))
+                            .toggleStyle(.checkbox)
+                        }
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.secondaryText)
+                        .padding(.leading, 4)
+                        .padding(.top, -4)
                     }
 
                     // API Key Warning
@@ -814,7 +853,6 @@ struct AISettingsView: View {
                     // Help Section
                     if self.showHelp { self.helpSectionView }
 
-                    Divider().padding(.vertical, 3)
 
                     // Provider/Model Configuration
                     self.providerConfigurationSection
@@ -829,15 +867,10 @@ struct AISettingsView: View {
     }
 
     private var aiEnhancementToggle: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Enable AI Enhancement")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(self.theme.palette.primaryText)
-                Text("Automatically enhance transcriptions with AI")
-                    .font(.system(size: 13))
-                    .foregroundStyle(self.theme.palette.secondaryText)
-            }
+        HStack(alignment: .center, spacing: 16) {
+            Text("Enable AI Enhancement")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(self.theme.palette.primaryText)
             Spacer()
             Toggle("", isOn: self.$enableAIProcessing)
                 .toggleStyle(.switch)
@@ -846,53 +879,6 @@ struct AISettingsView: View {
         .padding(.horizontal, 4)
     }
 
-    private var streamingToggle: some View {
-        Group {
-            Divider().padding(.vertical, 3)
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Enable Streaming")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(self.theme.palette.primaryText)
-                    Text("Currently only Command Mode shows real-time streaming")
-                        .font(.system(size: 13))
-                        .foregroundStyle(self.theme.palette.secondaryText)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { SettingsStore.shared.enableAIStreaming },
-                    set: { SettingsStore.shared.enableAIStreaming = $0 }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
-            .padding(.horizontal, 4)
-        }
-    }
-
-    private var showThinkingTokensToggle: some View {
-        Group {
-            Divider().padding(.vertical, 3)
-            HStack(alignment: .top, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Show Thinking Tokens")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(self.theme.palette.primaryText)
-                    Text("Display AI reasoning in Command and Rewrite modes (when available)")
-                        .font(.system(size: 13))
-                        .foregroundStyle(self.theme.palette.secondaryText)
-                }
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { SettingsStore.shared.showThinkingTokens },
-                    set: { SettingsStore.shared.showThinkingTokens = $0 }
-                ))
-                .toggleStyle(.switch)
-                .labelsHidden()
-            }
-            .padding(.horizontal, 4)
-        }
-    }
 
     private var apiKeyWarningView: some View {
         HStack(spacing: 10) {
@@ -943,22 +929,7 @@ struct AISettingsView: View {
 
     private var providerConfigurationSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Compatibility note
-            if self.selectedProviderID == "apple-intelligence" {
-                HStack(spacing: 6) {
-                    Image(systemName: "apple.logo").font(.caption2).foregroundStyle(self.theme.palette.accent)
-                    Text("Powered by on-device Apple Intelligence").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 4)
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(self.theme.palette.accent)
-                    Text("Supports any OpenAI compatible API endpoints").font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 4)
-            }
 
-            Divider()
 
             self.providerPickerRow
 
@@ -968,7 +939,6 @@ struct AISettingsView: View {
 
             // API Key Management
             if self.selectedProviderID != "apple-intelligence" {
-                Divider()
                 HStack(spacing: 8) {
                     Button(action: { self.handleAPIKeyButtonTapped() }) {
                         Label("Add or Modify API Key", systemImage: "key.fill")
@@ -989,7 +959,6 @@ struct AISettingsView: View {
                 }
             }
 
-            Divider()
 
             // Model Row
             if self.selectedProviderID == "apple-intelligence" {
@@ -1000,7 +969,6 @@ struct AISettingsView: View {
                 if self.showingReasoningConfig { self.reasoningConfigSection }
             }
 
-            Divider()
 
             // Connection Test
             if self.selectedProviderID != "apple-intelligence" {
@@ -1582,7 +1550,6 @@ struct AISettingsView: View {
                     Spacer()
                 }
 
-                Divider().padding(.vertical, 3)
 
                 // Dictation Prompts (multi-prompt system)
                 VStack(alignment: .leading, spacing: 10) {
