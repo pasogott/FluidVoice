@@ -13,8 +13,8 @@ import SwiftUI
 struct FluidApp: App {
     @StateObject private var menuBarManager = MenuBarManager()
     @StateObject private var appServices: AppServices
+    @ObservedObject private var settings = SettingsStore.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var theme = AppTheme.dark
 
     init() {
         // Use the shared singleton instance
@@ -26,7 +26,7 @@ struct FluidApp: App {
             ContentView()
                 .environmentObject(self.menuBarManager)
                 .environmentObject(self.appServices)
-                .appTheme(self.theme)
+                .appTheme(AppTheme.dark(accent: self.settings.accentColor))
                 .preferredColorScheme(.dark)
         }
         .defaultSize(width: 1000, height: 700)

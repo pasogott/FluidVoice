@@ -3,6 +3,7 @@ import ApplicationServices
 import Combine
 import Foundation
 import ServiceManagement
+import SwiftUI
 #if canImport(FluidAudio)
 import FluidAudio
 #endif
@@ -38,6 +39,7 @@ final class SettingsStore: ObservableObject {
         static let visualizerNoiseThreshold = "VisualizerNoiseThreshold"
         static let launchAtStartup = "LaunchAtStartup"
         static let showInDock = "ShowInDock"
+        static let accentColorOption = "AccentColorOption"
         static let pressAndHoldMode = "PressAndHoldMode"
         static let enableStreamingPreview = "EnableStreamingPreview"
         static let enableAIStreaming = "EnableAIStreaming"
@@ -666,6 +668,45 @@ final class SettingsStore: ObservableObject {
     }
 
     // MARK: - Preferences Settings
+
+    enum AccentColorOption: String, CaseIterable, Identifiable {
+        case cyan = "Cyan"
+        case green = "Green"
+        case blue = "Blue"
+        case purple = "Purple"
+        case orange = "Orange"
+
+        var id: String { self.rawValue }
+
+        var hex: String {
+            switch self {
+            case .cyan: return "#3AC8C6"
+            case .green: return "#22C55E"
+            case .blue: return "#3B82F6"
+            case .purple: return "#A855F7"
+            case .orange: return "#F59E0B"
+            }
+        }
+    }
+
+    var accentColorOption: AccentColorOption {
+        get {
+            guard let raw = self.defaults.string(forKey: Keys.accentColorOption),
+                  let option = AccentColorOption(rawValue: raw)
+            else {
+                return .cyan
+            }
+            return option
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue.rawValue, forKey: Keys.accentColorOption)
+        }
+    }
+
+    var accentColor: Color {
+        Color(hex: self.accentColorOption.hex) ?? Color(red: 0.227, green: 0.784, blue: 0.776)
+    }
 
     var launchAtStartup: Bool {
         get { self.defaults.bool(forKey: Keys.launchAtStartup) }
@@ -1733,7 +1774,7 @@ final class SettingsStore: ObservableObject {
         var brandColorHex: String {
             switch self {
             case .parakeetTDT, .parakeetTDTv2:
-                return "#76B900" // NVIDIA Green
+                return "#76B900"
             case .appleSpeech, .appleSpeechAnalyzer:
                 return "#A2AAAD" // Apple Gray
             case .whisperTiny, .whisperBase, .whisperSmall, .whisperMedium, .whisperLargeTurbo, .whisperLarge:

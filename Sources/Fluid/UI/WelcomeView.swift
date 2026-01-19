@@ -141,7 +141,7 @@ struct WelcomeView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Label("How to Use", systemImage: "play.fill")
                             .font(.headline)
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.fluidGreen)
 
                         VStack(alignment: .leading, spacing: 10) {
                             self.howToStep(number: 1, title: "Start Recording", description: "Press your hotkey (default: Right Option/Alt) or click the button")

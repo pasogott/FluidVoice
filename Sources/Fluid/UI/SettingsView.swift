@@ -132,6 +132,36 @@ struct SettingsView: View {
 
                             Divider().padding(.vertical, 10)
 
+                            // Accent Color
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(alignment: .center) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Accent Color")
+                                            .font(.body)
+                                        Text("Pick a preset accent color for the app.")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Picker("", selection: Binding(
+                                        get: { self.settings.accentColorOption },
+                                        set: { self.settings.accentColorOption = $0 }
+                                    )) {
+                                        ForEach(SettingsStore.AccentColorOption.allCases) { option in
+                                            Text(option.rawValue)
+                                                .tag(option)
+                                        }
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .tint(self.theme.palette.accent)
+                                    .frame(maxWidth: 320)
+                                }
+                            }
+
+                            Divider().padding(.vertical, 10)
+
                             // Automatic Updates
                             VStack(alignment: .leading, spacing: 6) {
                                 HStack(alignment: .center) {
@@ -288,7 +318,7 @@ struct SettingsView: View {
                                             .foregroundStyle(.orange)
                                     } else if self.hotkeyManagerInitialized {
                                         Image(systemName: "checkmark.circle.fill")
-                                            .foregroundStyle(.green)
+                                            .foregroundStyle(Color.fluidGreen)
                                         Text("Global Shortcuts Active")
                                             .font(.subheadline.weight(.medium))
 

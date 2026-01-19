@@ -76,7 +76,7 @@ struct SetupStepView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.green, in: Capsule())
+                        .background(Color.fluidGreen, in: Capsule())
                 } else if self.showActionButton {
                     HStack(spacing: 3) {
                         Text(self.actionButtonTitle)
@@ -94,13 +94,13 @@ struct SetupStepView: View {
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(self.status == .completed
-                        ? Color.green.opacity(0.06)
+                        ? Color.fluidGreen.opacity(0.06)
                         : self.theme.palette.cardBackground.opacity(0.5))
                     .overlay(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(
                                 self.status == .completed
-                                    ? Color.green.opacity(0.25)
+                                    ? Color.fluidGreen.opacity(0.25)
                                     : self.theme.palette.cardBorder.opacity(0.2),
                                 lineWidth: 1
                             )
@@ -114,7 +114,7 @@ struct SetupStepView: View {
 
     private var statusColor: Color {
         switch self.status {
-        case .completed: return .green
+        case .completed: return Color.fluidGreen
         case .inProgress: return .blue
         case .pending: return .secondary
         }

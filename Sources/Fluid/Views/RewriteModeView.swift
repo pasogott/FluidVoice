@@ -6,6 +6,7 @@ struct RewriteModeView: View {
     private var asr: ASRService { self.appServices.asr }
     @ObservedObject var settings = SettingsStore.shared
     @EnvironmentObject var menuBarManager: MenuBarManager
+    @Environment(\.theme) private var theme
     var onClose: (() -> Void)?
 
     @State private var inputText: String = ""
@@ -23,7 +24,7 @@ struct RewriteModeView: View {
             HStack {
                 Image(systemName: "pencil.and.outline")
                     .font(.title2)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(self.theme.palette.accent)
                 Text("Write Mode")
                     .font(.title2)
                     .fontWeight(.bold)
@@ -77,7 +78,7 @@ struct RewriteModeView: View {
                         VStack(spacing: 12) {
                             Image(systemName: "text.bubble")
                                 .font(.system(size: 48))
-                                .foregroundStyle(.teal)
+                                .foregroundStyle(self.theme.palette.accent)
                             Text("Write Mode")
                                 .font(.title2)
                                 .fontWeight(.bold)
@@ -101,12 +102,12 @@ struct RewriteModeView: View {
                             Text("Rewritten Text")
                                 .font(.caption)
                                 .fontWeight(.bold)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(self.theme.palette.accent)
 
                             Text(self.service.rewrittenText)
                                 .padding()
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(Color.green.opacity(0.1))
+                                .background(self.theme.palette.accent.opacity(0.1))
                                 .cornerRadius(8)
                                 .textSelection(.enabled)
 
@@ -123,7 +124,7 @@ struct RewriteModeView: View {
                                     self.onClose?()
                                 }
                                 .buttonStyle(.borderedProminent)
-                                .tint(.green)
+                                .tint(self.theme.palette.accent)
                             }
                             .padding(.top, 8)
                         }
@@ -200,7 +201,7 @@ struct RewriteModeView: View {
                 Button(action: self.toggleRecording) {
                     Image(systemName: self.asr.isRunning ? "stop.circle.fill" : "mic.circle.fill")
                         .font(.title2)
-                        .foregroundStyle(self.asr.isRunning ? Color.red : Color.accentColor)
+                        .foregroundStyle(self.asr.isRunning ? Color.red : self.theme.palette.accent)
                 }
                 .buttonStyle(.plain)
 

@@ -94,8 +94,8 @@ struct CustomDictionaryView: View {
                             .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(.green.opacity(0.2)))
-                            .foregroundStyle(.green)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.fluidGreen.opacity(0.2)))
+                            .foregroundStyle(Color.fluidGreen)
 
                         Spacer()
 

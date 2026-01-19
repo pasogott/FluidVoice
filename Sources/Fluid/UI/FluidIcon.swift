@@ -228,7 +228,7 @@ struct FluidIconAdvanced: View {
         HStack(spacing: 20) {
             FluidIconFilled(size: 32, backgroundColor: .blue)
             FluidIconFilled(size: 40, backgroundColor: .purple)
-            FluidIconFilled(size: 48, backgroundColor: .green)
+            FluidIconFilled(size: 48, backgroundColor: Color.fluidGreen)
         }
 
         // Large version for app icon
