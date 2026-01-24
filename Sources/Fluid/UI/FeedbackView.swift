@@ -175,7 +175,7 @@ struct FeedbackView: View {
                                     .padding(.horizontal, 20)
                                     .padding(.vertical, 10)
                                 }
-                                .buttonStyle(GlassButtonStyle())
+                                .buttonStyle(GlassButtonStyle(height: 36))
                                 .disabled(self.feedbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                                     self.feedbackEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                                     self.isSendingFeedback)

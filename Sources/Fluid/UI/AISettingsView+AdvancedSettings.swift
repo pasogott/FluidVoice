@@ -52,13 +52,16 @@ extension AIEnhancementSettingsView {
                                 SettingsStore.stripBaseDictationPrompt(from: $0)
                             } ?? SettingsStore.defaultDictationPromptBodyText()
                         ),
-                        isSelected: self.settings.selectedDictationPromptProfile == nil,
-                        onUse: { self.settings.selectedDictationPromptID = nil },
+                        isSelected: self.viewModel.selectedDictationPromptID == nil,
+                        onUse: {
+                            self.settings.selectedDictationPromptID = nil
+                            self.viewModel.selectedDictationPromptID = nil
+                        },
                         onOpen: { self.viewModel.openDefaultPromptViewer() }
                     )
 
                     // User prompt cards
-                    let profiles = self.settings.dictationPromptProfiles
+                    let profiles = self.viewModel.dictationPromptProfiles
                     if profiles.isEmpty {
                         Text("No custom prompts yet. Click “+ Add Prompt” to create one.")
                             .font(.caption)
@@ -71,8 +74,11 @@ extension AIEnhancementSettingsView {
                                 subtitle: profile.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                     ? "Empty prompt (uses Default)"
                                     : self.viewModel.promptPreview(SettingsStore.stripBaseDictationPrompt(from: profile.prompt)),
-                                isSelected: self.settings.selectedDictationPromptID == profile.id,
-                                onUse: { self.settings.selectedDictationPromptID = profile.id },
+                                isSelected: self.viewModel.selectedDictationPromptID == profile.id,
+                                onUse: {
+                                    self.settings.selectedDictationPromptID = profile.id
+                                    self.viewModel.selectedDictationPromptID = profile.id
+                                },
                                 onOpen: { self.viewModel.openEditor(for: profile) },
                                 onDelete: { self.viewModel.requestDeletePrompt(profile) }
                             )
@@ -83,7 +89,6 @@ extension AIEnhancementSettingsView {
             }
             .padding(14)
         }
-        .modifier(CardAppearAnimation(delay: 0.3, appear: self.$viewModel.appear))
         .sheet(item: self.$viewModel.promptEditorMode) { mode in
             self.promptEditorSheet(mode: mode)
         }
@@ -332,7 +337,7 @@ extension AIEnhancementSettingsView {
                 Button("Save") {
                     self.viewModel.savePromptEditor(mode: mode)
                 }
-                .buttonStyle(GlassButtonStyle())
+                .buttonStyle(GlassButtonStyle(height: AISettingsLayout.controlHeight))
                 .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
                 .disabled(!mode.isDefault && self.viewModel.draftPromptName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -340,6 +345,25 @@ extension AIEnhancementSettingsView {
         .padding()
         .frame(minWidth: 520, minHeight: 420)
         .onDisappear {
+            self.promptTest.deactivate()
+        }
+        .onChange(of: self.viewModel.enableAIProcessing) { _, _ in
+            self.autoDisablePromptTestIfNeeded()
+        }
+        .onChange(of: self.viewModel.selectedProviderID) { _, _ in
+            self.autoDisablePromptTestIfNeeded()
+        }
+        .onChange(of: self.viewModel.providerAPIKeys) { _, _ in
+            self.autoDisablePromptTestIfNeeded()
+        }
+        .onChange(of: self.viewModel.savedProviders) { _, _ in
+            self.autoDisablePromptTestIfNeeded()
+        }
+    }
+
+    private func autoDisablePromptTestIfNeeded() {
+        guard self.promptTest.isActive else { return }
+        if !self.viewModel.isAIPostProcessingConfiguredForDictation() {
             self.promptTest.deactivate()
         }
     }

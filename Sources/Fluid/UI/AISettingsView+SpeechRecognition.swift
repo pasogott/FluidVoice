@@ -150,7 +150,6 @@ extension VoiceEngineSettingsView {
 
         return HStack(alignment: .center, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
-                // Model name and description
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text(model.humanReadableName)
@@ -202,7 +201,6 @@ extension VoiceEngineSettingsView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Speed and Accuracy - Vertical Liquid Bars (FluidVoice easter egg!)
             HStack(spacing: 16) {
                 LiquidBar(
                     fillPercent: model.speedPercent,
@@ -226,13 +224,11 @@ extension VoiceEngineSettingsView {
         .padding(.vertical, 6)
     }
 
-    /// Simplified card for selecting a speech model
     func speechModelCard(for model: SettingsStore.SpeechModel) -> some View {
         let isSelected = self.viewModel.previewSpeechModel == model
         let isActive = self.viewModel.isActiveSpeechModel(model)
 
         return HStack(alignment: .top, spacing: 10) {
-            // Selection indicator
             Circle()
                 .fill(isSelected ? Color.fluidGreen : self.theme.palette.cardBorder.opacity(0.25))
                 .frame(width: 8, height: 8)
@@ -241,38 +237,16 @@ extension VoiceEngineSettingsView {
                         .stroke(isSelected ? Color.fluidGreen : self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
                 )
 
-            // Brand logo/badge - fixed size container for consistency
-            ZStack {
-                if model.usesAppleLogo {
-                    // Apple logo uses SF Symbol
-                    Image(systemName: "apple.logo")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color(hex: model.brandColorHex) ?? .gray)
-                } else {
-                    // Text badges (NVIDIA, OpenAI)
-                    Text(model.brandName)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(Color(hex: model.brandColorHex) ?? .gray)
-                        )
-                }
-            }
-            .frame(width: 48, height: 20, alignment: .center)
+            self.speechModelLogoView(for: model)
+                .frame(width: 28, height: 28)
 
-            // Title + technical name
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.humanReadableName)
                     .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
                     .foregroundStyle(isSelected ? self.theme.palette.primaryText : .secondary)
-                if self.viewModel.showAdvancedSpeechInfo {
-                    Text(model.displayName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary.opacity(0.7))
-                }
+                Text(model.displayName)
+                    .font(.caption)
+                    .foregroundStyle(.secondary.opacity(0.7))
 
                 HStack(spacing: 10) {
                     HStack(spacing: 4) {
@@ -302,7 +276,6 @@ extension VoiceEngineSettingsView {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Action area (right side)
             if (self.viewModel.asr.isDownloadingModel || self.viewModel.asr.isLoadingModel) && isActive && !self.viewModel.asr.isAsrReady {
                 VStack(alignment: .trailing, spacing: 4) {
                     if let progress = self.viewModel.asr.downloadProgress, self.viewModel.asr.isDownloadingModel {
@@ -482,4 +455,59 @@ extension VoiceEngineSettingsView {
         }
     }
 
+    // MARK: - Speech Model Logo View
+
+    private func speechModelLogoView(for model: SettingsStore.SpeechModel) -> some View {
+        let bgColor = self.speechModelBackgroundColor(for: model)
+        let imageName = self.speechModelImageName(for: model)
+        let isNvidia = model.brandName.lowercased().contains("nvidia")
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(bgColor)
+
+            if model.usesAppleLogo {
+                Image(systemName: "apple.logo")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.primary)
+            } else if let imageName {
+                Image(imageName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    // NVIDIA logo larger to fill more of the container
+                    .frame(width: isNvidia ? 24 : 18, height: isNvidia ? 24 : 18)
+            } else {
+                Text(String(model.brandName.prefix(2)).uppercased())
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    private func speechModelBackgroundColor(for model: SettingsStore.SpeechModel) -> Color {
+        let brand = model.brandName.lowercased()
+
+        // Both NVIDIA and OpenAI use white/light gray bg (transparent logos)
+        if brand.contains("nvidia") || brand.contains("openai") || brand.contains("whisper") {
+            return Color(red: 0.97, green: 0.97, blue: 0.97)
+        }
+        if brand.contains("apple") || model.usesAppleLogo {
+            return self.theme.palette.cardBackground.opacity(0.9)
+        }
+        return Color(hex: model.brandColorHex)?.opacity(0.2) ?? self.theme.palette.cardBackground
+    }
+
+    private func speechModelImageName(for model: SettingsStore.SpeechModel) -> String? {
+        let brand = model.brandName.lowercased()
+
+        if brand.contains("nvidia") {
+            return "Provider_NVIDIA"
+        }
+        if brand.contains("openai") || brand.contains("whisper") {
+            return "Provider_OpenAI"
+        }
+        return nil
+    }
 }

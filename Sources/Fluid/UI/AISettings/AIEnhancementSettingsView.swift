@@ -5,10 +5,18 @@ struct AIEnhancementSettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var promptTest: DictationPromptTestCoordinator
     let theme: AppTheme
+    @State var expandedProviderID: String? = nil
 
     var body: some View {
         self.aiConfigurationCard
-            .onAppear { self.viewModel.onAppear() }
+            .onAppear {
+                self.viewModel.onAppear()
+            }
+            .onChange(of: self.viewModel.connectionStatus) { oldValue, newValue in
+                if oldValue == .success && newValue != .success {
+                    self.expandedProviderID = self.viewModel.selectedProviderID
+                }
+            }
             .onChange(of: self.viewModel.showKeychainPermissionAlert) { _, isPresented in
                 guard isPresented else { return }
                 self.viewModel.presentKeychainAccessAlert(message: self.viewModel.keychainPermissionMessage)

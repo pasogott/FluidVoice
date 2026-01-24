@@ -3,14 +3,17 @@ import SwiftUI
 // MARK: - Primary (Prominent) Button
 
 struct GlassButtonStyle: ButtonStyle {
+    var height: CGFloat? = nil
+
     func makeBody(configuration: Configuration) -> some View {
-        GlassButton(configuration: configuration)
+        GlassButton(configuration: configuration, height: self.height)
     }
 
     private struct GlassButton: View {
         @Environment(\.theme) private var theme
         @State private var isHovered = false
         let configuration: ButtonStyle.Configuration
+        let height: CGFloat?
 
         private var shape: RoundedRectangle {
             RoundedRectangle(cornerRadius: self.theme.metrics.corners.md, style: .continuous)
@@ -20,8 +23,8 @@ struct GlassButtonStyle: ButtonStyle {
             self.configuration.label
                 .fontWeight(.semibold)
                 .padding(.horizontal, self.theme.metrics.spacing.lg)
-                .padding(.vertical, self.theme.metrics.spacing.md)
-                .frame(minHeight: 36)
+                .padding(.vertical, self.theme.metrics.spacing.sm)
+                .frame(height: self.height ?? 36)
                 .foregroundStyle(self.theme.palette.primaryText)
                 .background(self.theme.materials.card, in: self.shape)
                 .background(
@@ -229,6 +232,63 @@ struct CompactButtonStyle: ButtonStyle {
                     y: self.isHovered ? self.theme.metrics.cardShadow.y - 1 : 1
                 )
                 .scaleEffect(self.configuration.isPressed ? 0.97 : (self.isHovered ? 1.01 : 1.0))
+                .animation(.spring(response: 0.18, dampingFraction: 0.78), value: self.isHovered)
+                .animation(.spring(response: 0.2, dampingFraction: 0.8), value: self.configuration.isPressed)
+                .onHover { self.isHovered = $0 }
+        }
+    }
+}
+
+// MARK: - Accent Filled Button (Solid accent background)
+
+struct AccentButtonStyle: ButtonStyle {
+    var compact: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        AccentButton(configuration: configuration, compact: self.compact)
+    }
+
+    private struct AccentButton: View {
+        @Environment(\.theme) private var theme
+        @State private var isHovered = false
+        let configuration: ButtonStyle.Configuration
+        let compact: Bool
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: self.compact ? 8 : self.theme.metrics.corners.md, style: .continuous)
+        }
+
+        var body: some View {
+            self.configuration.label
+                .fontWeight(.semibold)
+                .padding(.horizontal, self.compact ? 12 : self.theme.metrics.spacing.lg)
+                .padding(.vertical, self.compact ? 8 : self.theme.metrics.spacing.md)
+                .frame(minHeight: self.compact ? 32 : 36)
+                .foregroundStyle(Color.white)
+                .background(
+                    self.shape
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    self.theme.palette.accent,
+                                    self.theme.palette.accent.opacity(0.85),
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                )
+                .overlay(
+                    self.shape
+                        .stroke(Color.white.opacity(self.isHovered ? 0.3 : 0.15), lineWidth: 1)
+                )
+                .shadow(
+                    color: self.theme.palette.accent.opacity(self.isHovered ? 0.5 : 0.3),
+                    radius: self.isHovered ? 6 : 4,
+                    x: 0,
+                    y: self.isHovered ? 3 : 2
+                )
+                .scaleEffect(self.configuration.isPressed ? 0.97 : (self.isHovered ? 1.02 : 1.0))
                 .animation(.spring(response: 0.18, dampingFraction: 0.78), value: self.isHovered)
                 .animation(.spring(response: 0.2, dampingFraction: 0.8), value: self.configuration.isPressed)
                 .onHover { self.isHovered = $0 }

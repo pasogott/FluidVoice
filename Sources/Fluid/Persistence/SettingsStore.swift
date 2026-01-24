@@ -31,6 +31,7 @@ final class SettingsStore: ObservableObject {
         static let providerAPIKeys = "ProviderAPIKeys"
         static let providerAPIKeyIdentifiers = "ProviderAPIKeyIdentifiers"
         static let savedProviders = "SavedProviders"
+        static let verifiedProviderFingerprints = "VerifiedProviderFingerprints"
         static let shareAnonymousAnalytics = "ShareAnonymousAnalytics"
         static let hotkeyShortcutKey = "HotkeyShortcutKey"
         static let preferredInputDeviceUID = "PreferredInputDeviceUID"
@@ -535,7 +536,7 @@ final class SettingsStore: ObservableObject {
     var enableAIStreaming: Bool {
         get {
             let value = self.defaults.object(forKey: Keys.enableAIStreaming)
-            return value as? Bool ?? false // Default to false (disabled)
+            return value as? Bool ?? true // Default to true (enabled)
         }
         set {
             objectWillChange.send()
@@ -1056,6 +1057,26 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.showThinkingTokens)
+        }
+    }
+
+    /// Stored verification fingerprints per provider key (hash of baseURL + apiKey).
+    var verifiedProviderFingerprints: [String: String] {
+        get {
+            guard let data = self.defaults.data(forKey: Keys.verifiedProviderFingerprints),
+                  let decoded = try? JSONDecoder().decode([String: String].self, from: data)
+            else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            objectWillChange.send()
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                self.defaults.set(encoded, forKey: Keys.verifiedProviderFingerprints)
+            } else {
+                self.defaults.removeObject(forKey: Keys.verifiedProviderFingerprints)
+            }
         }
     }
 

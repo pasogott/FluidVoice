@@ -16,15 +16,21 @@ final class ModelRepository {
 
     /// All built-in provider IDs (not including custom/saved providers)
     static let builtInProviderIDs = [
-        "openai", "groq", "cerebras", "google", "openrouter", "ollama", "lmstudio", "apple-intelligence",
+        "fluid-1", "openai", "anthropic", "xai", "groq", "cerebras", "google", "openrouter", "ollama", "lmstudio", "apple-intelligence",
     ]
 
     /// Returns the default models for a given provider ID.
     /// This is used when the user has not added any custom models for that provider.
     func defaultModels(for providerID: String) -> [String] {
         switch providerID {
+        case "fluid-1":
+            return ["fluid-1-preview"]
         case "openai":
             return ["gpt-4.1"]
+        case "anthropic":
+            return ["claude-sonnet-4-20250514"]
+        case "xai":
+            return ["grok-3-fast"]
         case "groq":
             return ["openai/gpt-oss-120b"]
         case "cerebras":
@@ -49,6 +55,10 @@ final class ModelRepository {
         switch providerID {
         case "openai":
             return "https://api.openai.com/v1"
+        case "anthropic":
+            return "https://api.anthropic.com/v1"
+        case "xai":
+            return "https://api.x.ai/v1"
         case "groq":
             return "https://api.groq.com/openai/v1"
         case "cerebras":
@@ -69,7 +79,10 @@ final class ModelRepository {
     /// Returns the display name for a provider ID
     func displayName(for providerID: String) -> String {
         switch providerID {
+        case "fluid-1": return "Fluid-1"
         case "openai": return "OpenAI"
+        case "anthropic": return "Anthropic"
+        case "xai": return "xAI"
         case "groq": return "Groq"
         case "cerebras": return "Cerebras"
         case "google": return "Google"
@@ -92,6 +105,10 @@ final class ModelRepository {
         switch providerID {
         case "openai":
             return ("https://platform.openai.com/api-keys", "Get API Key")
+        case "anthropic":
+            return ("https://console.anthropic.com/settings/keys", "Get API Key")
+        case "xai":
+            return ("https://console.x.ai/", "Get API Key")
         case "groq":
             return ("https://console.groq.com/keys", "Get API Key")
         case "cerebras":
@@ -134,7 +151,10 @@ final class ModelRepository {
         appleIntelligenceDisabledReason: String? = nil
     ) -> [(id: String, name: String)] {
         var list: [(id: String, name: String)] = [
+            ("fluid-1", "Fluid-1"),
             ("openai", "OpenAI"),
+            ("anthropic", "Anthropic"),
+            ("xai", "xAI"),
             ("groq", "Groq"),
             ("cerebras", "Cerebras"),
             ("google", "Google"),

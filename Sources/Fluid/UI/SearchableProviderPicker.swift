@@ -86,10 +86,10 @@ struct SearchableProviderPicker: View {
                             )
                     )
             }
-                .frame(width: self.controlWidth, alignment: .leading)
+            .frame(width: self.controlWidth, alignment: .leading)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-                .frame(height: self.controlHeight)
+            .frame(height: self.controlHeight)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(self.theme.palette.cardBackground)

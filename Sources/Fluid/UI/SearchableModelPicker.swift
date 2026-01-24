@@ -14,6 +14,8 @@ struct SearchableModelPicker: View {
     @Binding var selectedModel: String
     var onRefresh: (() async -> Void)?
     var isRefreshing: Bool = false
+    var refreshEnabled: Bool = true
+    var selectionEnabled: Bool = true
     let controlWidth: CGFloat
     let controlHeight: CGFloat?
 
@@ -22,6 +24,8 @@ struct SearchableModelPicker: View {
         selectedModel: Binding<String>,
         onRefresh: (() async -> Void)? = nil,
         isRefreshing: Bool = false,
+        refreshEnabled: Bool = true,
+        selectionEnabled: Bool = true,
         controlWidth: CGFloat = 180,
         controlHeight: CGFloat? = nil
     ) {
@@ -29,6 +33,8 @@ struct SearchableModelPicker: View {
         self._selectedModel = selectedModel
         self.onRefresh = onRefresh
         self.isRefreshing = isRefreshing
+        self.refreshEnabled = refreshEnabled
+        self.selectionEnabled = selectionEnabled
         self.controlWidth = controlWidth
         self.controlHeight = controlHeight
     }
@@ -59,7 +65,7 @@ struct SearchableModelPicker: View {
                         .frame(width: 20, height: 20)
                         .background(
                             Circle()
-                                .fill(self.theme.palette.cardBackground.opacity(0.7))
+                                .fill(self.theme.palette.cardBackground.opacity(0.6))
                                 .overlay(
                                     Circle()
                                         .stroke(self.theme.palette.cardBorder.opacity(0.4), lineWidth: 1)
@@ -70,16 +76,26 @@ struct SearchableModelPicker: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
                 .frame(height: self.controlHeight)
+                .contentShape(Rectangle())
+                .background(self.theme.materials.card, in: RoundedRectangle(cornerRadius: self.theme.metrics.corners.sm, style: .continuous))
                 .background(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: self.theme.metrics.corners.sm, style: .continuous)
                         .fill(self.theme.palette.cardBackground)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            RoundedRectangle(cornerRadius: self.theme.metrics.corners.sm, style: .continuous)
                                 .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
                         )
                 )
+                .shadow(
+                    color: self.theme.palette.cardBorder.opacity(0.18),
+                    radius: 3,
+                    x: 0,
+                    y: 1
+                )
             }
             .buttonStyle(.plain)
+            .disabled(!self.selectionEnabled)
+            .opacity(self.selectionEnabled ? 1 : 0.55)
             .popover(isPresented: self.$isShowingPopover, arrowEdge: .bottom) {
                 VStack(spacing: 0) {
                     // Search field
@@ -177,8 +193,9 @@ struct SearchableModelPicker: View {
                         }
                     }
                     .buttonStyle(.borderless)
-                    .disabled(self.isRefreshing)
-                    .help("Fetch models from API")
+                    .disabled(self.isRefreshing || !self.refreshEnabled)
+                    .opacity(self.refreshEnabled ? 1 : 0.45)
+                    .help("Refresh model list")
                 } else {
                     Button(action: {
                         Task { await onRefresh() }
@@ -189,12 +206,14 @@ struct SearchableModelPicker: View {
                                 .frame(width: 16, height: 16)
                         } else {
                             Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
                         }
                     }
-                    .buttonStyle(CompactButtonStyle())
+                    .buttonStyle(AccentButtonStyle(compact: true))
                     .frame(width: self.controlHeight, height: self.controlHeight)
-                    .disabled(self.isRefreshing)
-                    .help("Fetch models from API")
+                    .disabled(self.isRefreshing || !self.refreshEnabled)
+                    .opacity(self.refreshEnabled ? 1 : 0.45)
+                    .help("Refresh model list")
                 }
             }
         }

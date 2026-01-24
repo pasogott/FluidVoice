@@ -39,7 +39,7 @@ enum PromptEditorMode: Identifiable, Equatable {
 }
 
 enum ModelSortOption: String, CaseIterable, Identifiable {
-    case name = "Model Name"
+    case provider = "Provider"
     case accuracy = "Accuracy"
     case speed = "Speed"
 

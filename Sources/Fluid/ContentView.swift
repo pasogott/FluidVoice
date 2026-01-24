@@ -17,7 +17,8 @@ import SwiftUI
 
 enum SidebarItem: Hashable {
     case welcome
-    case aiSettings
+    case voiceEngine
+    case aiEnhancements
     case preferences
     case meetingTools
     case customDictionary
@@ -42,6 +43,7 @@ struct ContentView: View {
     @StateObject private var commandModeService = CommandModeService()
     @StateObject private var rewriteModeService = RewriteModeService()
     @EnvironmentObject private var menuBarManager: MenuBarManager
+    @ObservedObject private var settings = SettingsStore.shared
 
     // Computed properties to access shared services from AppServices container
     // This maintains backward compatibility with the existing code while
@@ -58,6 +60,7 @@ struct ContentView: View {
     @State private var commandModeHotkeyShortcut: HotkeyShortcut = SettingsStore.shared.commandModeHotkeyShortcut
     @State private var rewriteModeHotkeyShortcut: HotkeyShortcut = SettingsStore.shared.rewriteModeHotkeyShortcut
     @State private var isCommandModeShortcutEnabled: Bool = SettingsStore.shared.commandModeShortcutEnabled
+    @State private var aiSettingsExpanded: Bool = true
     @State private var isRewriteModeShortcutEnabled: Bool = SettingsStore.shared.rewriteModeShortcutEnabled
     @State private var isRecordingForRewrite: Bool = false // Track if current recording is for rewrite mode
     @State private var isRecordingForCommand: Bool = false // Track if current recording is for command mode
@@ -677,53 +680,90 @@ struct ContentView: View {
                 Label("Welcome", systemImage: "house.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .welcome))
 
-            NavigationLink(value: SidebarItem.aiSettings) {
-                Label("AI Settings", systemImage: "sparkles")
-                    .font(.system(size: 15, weight: .medium))
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.aiSettingsExpanded.toggle()
+                }
+            }) {
+                HStack {
+                    Label("AI Settings", systemImage: "sparkles")
+                        .font(.system(size: 15, weight: .medium))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(self.aiSettingsExpanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if self.aiSettingsExpanded {
+                NavigationLink(value: SidebarItem.voiceEngine) {
+                    Label("Voice Engine", systemImage: "waveform")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .listRowBackground(self.sidebarRowBackground(for: .voiceEngine))
+
+                NavigationLink(value: SidebarItem.aiEnhancements) {
+                    Label("AI Enhancements", systemImage: "sparkles")
+                        .font(.system(size: 15, weight: .medium))
+                }
+                .listRowBackground(self.sidebarRowBackground(for: .aiEnhancements))
             }
 
             NavigationLink(value: SidebarItem.commandMode) {
                 Label("Command Mode", systemImage: "terminal.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .commandMode))
 
             NavigationLink(value: SidebarItem.rewriteMode) {
                 Label("Write Mode", systemImage: "pencil.and.outline")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .rewriteMode))
 
             NavigationLink(value: SidebarItem.meetingTools) {
                 Label("File Transcription", systemImage: "doc.text.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .meetingTools))
 
             NavigationLink(value: SidebarItem.customDictionary) {
                 Label("Custom Dictionary", systemImage: "text.book.closed.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .customDictionary))
 
             NavigationLink(value: SidebarItem.stats) {
                 Label("Stats", systemImage: "chart.bar.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .stats))
 
             NavigationLink(value: SidebarItem.history) {
                 Label("History", systemImage: "clock.arrow.circlepath")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .history))
 
             NavigationLink(value: SidebarItem.preferences) {
                 Label("Preferences", systemImage: "gearshape.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .preferences))
 
             NavigationLink(value: SidebarItem.feedback) {
                 Label("Feedback", systemImage: "envelope.fill")
                     .font(.system(size: 15, weight: .medium))
             }
+            .listRowBackground(self.sidebarRowBackground(for: .feedback))
         }
         .listStyle(.sidebar)
+        .animation(nil, value: self.selectedSidebarItem)
         .navigationTitle("FluidVoice")
         .scrollContentBackground(.hidden)
         .background {
@@ -734,6 +774,13 @@ struct ContentView: View {
             .ignoresSafeArea()
         }
         .tint(self.theme.palette.accent)
+    }
+
+    private func sidebarRowBackground(for item: SidebarItem) -> some View {
+        let isSelected = self.selectedSidebarItem == item
+        return RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isSelected ? self.settings.accentColor.opacity(0.15) : .clear)
+            .padding(.vertical, 2)
     }
 
     private var detailView: some View {
@@ -748,7 +795,9 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             self.detailContent
-                .transition(.opacity)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
         }
     }
 
@@ -756,9 +805,13 @@ struct ContentView: View {
         switch self.selectedSidebarItem ?? .welcome {
         case .welcome:
             return AnyView(self.welcomeView)
-        case .aiSettings:
-            return AnyView(AISettingsView(
+        case .voiceEngine:
+            return AnyView(VoiceEngineSettingsScreen(
                 appServices: self.appServices,
+                theme: self.theme
+            ))
+        case .aiEnhancements:
+            return AnyView(AIEnhancementSettingsScreen(
                 menuBarManager: self.menuBarManager,
                 theme: self.theme
             ))

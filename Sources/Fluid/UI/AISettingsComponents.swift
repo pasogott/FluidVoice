@@ -21,6 +21,7 @@ struct LiquidLayer: Shape {
         var path = Path()
         let width = Double(rect.width)
         let height = Double(rect.height)
+        let step = max(2.0, width / 160.0)
 
         // Wave surface very close to the top (only 3% offset for wave amplitude)
         let baseY = height * 0.03
@@ -28,7 +29,7 @@ struct LiquidLayer: Shape {
         path.move(to: CGPoint(x: 0, y: CGFloat(baseY)))
 
         // Create a gentle, organic wave surface
-        for x in stride(from: 0.0, through: width, by: 1.0) {
+        for x in stride(from: 0.0, through: width, by: step) {
             let normalizedX = x / width
 
             // Slow, gentle wave like water sloshing in a jar
@@ -96,7 +97,7 @@ struct LiquidBar: View {
                 GeometryReader { geo in
                     let displayHeight = geo.size.height * CGFloat(self.animatedFill)
 
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                    TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { timeline in
                         let time = timeline.date.timeIntervalSinceReferenceDate
 
                         // Single organic liquid surface

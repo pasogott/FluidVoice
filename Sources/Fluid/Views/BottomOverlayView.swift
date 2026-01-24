@@ -473,9 +473,9 @@ struct BottomOverlayView: View {
         .padding(.vertical, self.layout.vPadding)
         .background(
             ZStack {
-                // Solid black background
+                // Solid pitch black background
                 RoundedRectangle(cornerRadius: self.layout.cornerRadius)
-                    .fill(self.theme.palette.cardBackground)
+                    .fill(Color.black)
 
                 // Inner border
                 RoundedRectangle(cornerRadius: self.layout.cornerRadius)

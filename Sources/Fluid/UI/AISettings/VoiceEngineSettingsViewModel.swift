@@ -8,7 +8,7 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
 
     var asr: ASRService { self.appServices.asr }
 
-    @Published var modelSortOption: ModelSortOption = .name
+    @Published var modelSortOption: ModelSortOption = .provider
     @Published var providerFilter: SpeechProviderFilter = .all
     @Published var englishOnlyFilter: Bool = false
     @Published var installedOnlyFilter: Bool = false
@@ -77,8 +77,8 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
         }
 
         switch self.modelSortOption {
-        case .name:
-            models.sort { $0.humanReadableName.localizedCaseInsensitiveCompare($1.humanReadableName) == .orderedAscending }
+        case .provider:
+            models.sort { $0.brandName.localizedCaseInsensitiveCompare($1.brandName) == .orderedAscending }
         case .accuracy:
             models.sort { $0.accuracyPercent > $1.accuracyPercent }
         case .speed:

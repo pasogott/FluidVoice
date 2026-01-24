@@ -63,7 +63,7 @@ struct WelcomeView: View {
                                         : "Download the AI model for offline voice transcription (~500MB)"),
                                 status: (self.asr.isAsrReady || self.asr.modelsExistOnDisk) ? .completed : .pending,
                                 action: {
-                                    self.selectedSidebarItem = .aiSettings
+                                    self.selectedSidebarItem = .aiEnhancements
                                 },
                                 actionButtonTitle: "Go to AI Settings",
                                 showActionButton: !(self.asr.isAsrReady || self.asr.modelsExistOnDisk)
@@ -109,7 +109,7 @@ struct WelcomeView: View {
                                     : "Configure API keys for AI-powered text enhancement",
                                 status: self.settings.isAIConfigured ? .completed : .pending,
                                 action: {
-                                    self.selectedSidebarItem = .aiSettings
+                                    self.selectedSidebarItem = .aiEnhancements
                                 },
                                 actionButtonTitle: "Configure AI"
                             )
