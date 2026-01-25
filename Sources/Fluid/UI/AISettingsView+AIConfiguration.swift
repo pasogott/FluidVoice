@@ -505,7 +505,7 @@ extension AIEnhancementSettingsView {
                 self.expandedProviderID = nil
             } else {
                 self.expandedProviderID = providerID
-                self.recordFluid1Interest()
+                self.fluid1InterestErrorMessage = ""
             }
             return
         }
@@ -521,33 +521,69 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private func recordFluid1Interest() {
-        guard !self.settings.fluid1InterestCaptured else { return }
-        self.settings.fluid1InterestCaptured = true
-        AnalyticsService.shared.capture(
-            .providerInterestClicked,
-            properties: [
-                "provider_id": "fluid-1",
-                "provider_name": ModelRepository.shared.displayName(for: "fluid-1"),
-                "source": "ai_settings_all_providers",
-                "cta_variant": "early_access_tap_to_join",
-            ]
-        )
-    }
-
     private var fluid1InterestSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(self.theme.palette.accent)
-                Text("Thank you — coming soon")
-                    .font(.system(size: 13, weight: .semibold))
-            }
+        VStack(alignment: .leading, spacing: 10) {
+            if self.settings.fluid1InterestCaptured {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Thank you — coming soon")
+                        .font(.system(size: 13, weight: .semibold))
+                }
 
-            Text("We saved your interest in Fluid-1, our private on-device model. We'll notify you when it's ready.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                Text("We saved your interest in Fluid-1, our private on-device model. We'll notify you when it's ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "envelope.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Join Fluid-1 early access")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+
+                Text("Share your email to get notified when our private on-device model is ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Email")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextField("you@example.com", text: self.$fluid1InterestEmail)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13))
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: { self.submitFluid1Interest() }) {
+                        HStack(spacing: 6) {
+                            if self.fluid1InterestIsSubmitting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 11))
+                            }
+                            Text("Join early access")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(GlassButtonStyle(height: AISettingsLayout.controlHeight))
+                    .disabled(
+                        self.fluid1InterestIsSubmitting ||
+                            self.fluid1InterestEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+
+                    if !self.fluid1InterestErrorMessage.isEmpty {
+                        Text(self.fluid1InterestErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -559,6 +595,69 @@ extension AIEnhancementSettingsView {
                         .stroke(self.theme.palette.accent.opacity(0.25), lineWidth: 1)
                 )
         )
+    }
+
+    private func submitFluid1Interest() {
+        guard !self.settings.fluid1InterestCaptured else { return }
+        let email = self.fluid1InterestEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty else { return }
+        self.fluid1InterestErrorMessage = ""
+        self.fluid1InterestIsSubmitting = true
+
+        Task {
+            let success = await self.sendFluid1Interest(email: email)
+            await MainActor.run {
+                self.fluid1InterestIsSubmitting = false
+                if success {
+                    self.settings.fluid1InterestCaptured = true
+                    self.fluid1InterestEmail = ""
+                } else {
+                    self.fluid1InterestErrorMessage = "We couldn't save your interest. Please try again."
+                }
+            }
+        }
+    }
+
+    private func sendFluid1Interest(email: String) async -> Bool {
+        guard let url = URL(string: "https://altic.dev/api/fluid/fluid-model-interest") else {
+            DebugLogger.shared.error("Invalid Fluid-1 interest API URL", source: "AISettingsView")
+            return false
+        }
+
+        let payload: [String: Any] = [
+            "emailId": email,
+            "modelName": "Fluid-1",
+        ]
+
+        guard JSONSerialization.isValidJSONObject(payload) else { return false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let success = (200...299).contains(httpResponse.statusCode)
+                if success {
+                    DebugLogger.shared.info("Fluid-1 interest submitted", source: "AISettingsView")
+                } else {
+                    DebugLogger.shared.error(
+                        "Fluid-1 interest submission failed with status: \(httpResponse.statusCode)",
+                        source: "AISettingsView"
+                    )
+                }
+                return success
+            }
+            return false
+        } catch {
+            DebugLogger.shared.error(
+                "Network error submitting Fluid-1 interest: \(error.localizedDescription)",
+                source: "AISettingsView"
+            )
+            return false
+        }
     }
 
     private func providerDetailsSection(for item: ProviderItem) -> AnyView {
