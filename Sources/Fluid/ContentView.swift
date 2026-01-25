@@ -738,15 +738,23 @@ struct ContentView: View {
                 NavigationLink(value: SidebarItem.voiceEngine) {
                     Label("Voice Engine", systemImage: "waveform")
                         .font(.system(size: 15, weight: .medium))
+                        .padding(.leading, 18)
                 }
                 .listRowBackground(self.sidebarRowBackground(for: .voiceEngine))
 
                 NavigationLink(value: SidebarItem.aiEnhancements) {
-                    Label("AI Enhancements", systemImage: "sparkles")
+                    Label("AI Enhancements", systemImage: "brain")
                         .font(.system(size: 15, weight: .medium))
+                        .padding(.leading, 18)
                 }
                 .listRowBackground(self.sidebarRowBackground(for: .aiEnhancements))
             }
+
+            NavigationLink(value: SidebarItem.preferences) {
+                Label("Preferences", systemImage: "gearshape.fill")
+                    .font(.system(size: 15, weight: .medium))
+            }
+            .listRowBackground(self.sidebarRowBackground(for: .preferences))
 
             NavigationLink(value: SidebarItem.commandMode) {
                 Label("Command Mode", systemImage: "terminal.fill")
@@ -783,12 +791,6 @@ struct ContentView: View {
                     .font(.system(size: 15, weight: .medium))
             }
             .listRowBackground(self.sidebarRowBackground(for: .history))
-
-            NavigationLink(value: SidebarItem.preferences) {
-                Label("Preferences", systemImage: "gearshape.fill")
-                    .font(.system(size: 15, weight: .medium))
-            }
-            .listRowBackground(self.sidebarRowBackground(for: .preferences))
 
             NavigationLink(value: SidebarItem.feedback) {
                 Label("Feedback", systemImage: "envelope.fill")

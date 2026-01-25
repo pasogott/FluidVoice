@@ -6,6 +6,7 @@ struct AIEnhancementSettingsView: View {
     @ObservedObject var promptTest: DictationPromptTestCoordinator
     let theme: AppTheme
     @State var expandedProviderID: String? = nil
+    @State var providerSearchText: String = ""
 
     var body: some View {
         self.aiConfigurationCard
