@@ -671,7 +671,6 @@ extension AIEnhancementSettingsView {
         }
     }
 
-
     private func providerDetailsSection(for item: ProviderItem) -> AnyView {
         let isAppleDisabled = item.id == "apple-intelligence-disabled"
         let isApple = item.id == "apple-intelligence"
