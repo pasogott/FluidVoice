@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreMedia
 import Foundation
 #if arch(arm64)
 import FluidAudio
@@ -119,13 +120,6 @@ final class MeetingTranscriptionService: ObservableObject {
                 throw TranscriptionError.modelLoadFailed("ASR Manager not initialized")
             }
 
-            // Convert audio to required format (16kHz mono Float32)
-            self.currentStatus = "Converting audio..."
-            self.progress = 0.3
-
-            let converter = AudioConverter()
-            let samples: [Float]
-
             // Check file extension
             let fileExtension = fileURL.pathExtension.lowercased()
             let supportedFormats = ["wav", "mp3", "m4a", "aac", "flac", "aiff", "caf", "mp4", "mov"]
@@ -135,19 +129,102 @@ final class MeetingTranscriptionService: ObservableObject {
                     .fileNotSupported("Format .\(fileExtension) not supported. Supported: \(supportedFormats.joined(separator: ", "))")
             }
 
+            // Get audio duration for progress display
+            self.currentStatus = "Analyzing audio file..."
+            self.progress = 0.2
+
+            let asset = AVAsset(url: fileURL)
+            let duration: Double
             do {
-                samples = try converter.resampleAudioFile(fileURL)
+                let cmDuration = try await asset.load(.duration)
+                duration = CMTimeGetSeconds(cmDuration)
             } catch {
-                throw TranscriptionError.audioConversionFailed(error.localizedDescription)
+                // Fall back to 0 if we can't determine duration
+                duration = 0
+                DebugLogger.shared.warning("Could not determine audio duration: \(error.localizedDescription)", source: "MeetingTranscriptionService")
             }
 
-            let duration = Double(samples.count) / 16_000.0 // 16kHz sample rate
-
-            // Transcribe
-            self.currentStatus = "Transcribing audio (\(Int(duration))s)..."
-            self.progress = 0.6
-
-            let transcriptionResult = try await asrManager.transcribe(samples, source: .system)
+            // Transcribe using chunked processing for long files
+            // This reads audio in ~20 minute segments to avoid memory overflow on 3+ hour files
+            let chunkDurationSeconds: Double = 20 * 60 // 20 minutes per chunk (well under 24min model limit)
+            let sampleRate: Double = 16_000 // Target sample rate for ASR
+            let samplesPerChunk = Int(chunkDurationSeconds * sampleRate)
+            
+            var allTranscriptions: [String] = []
+            var totalConfidence: Float = 0
+            var chunkCount = 0
+            
+            // Open audio file for reading
+            let audioFile: AVAudioFile
+            do {
+                audioFile = try AVAudioFile(forReading: fileURL)
+            } catch {
+                throw TranscriptionError.audioConversionFailed("Could not open audio file: \(error.localizedDescription)")
+            }
+            
+            let fileFormat = audioFile.processingFormat
+            let totalFrames = AVAudioFrameCount(audioFile.length)
+            let fileSampleRate = fileFormat.sampleRate
+            let resampleRatio = sampleRate / fileSampleRate
+            
+            // Calculate chunk size in source file frames
+            let sourceFramesPerChunk = AVAudioFrameCount(Double(samplesPerChunk) / resampleRatio)
+            var currentFrame: AVAudioFramePosition = 0
+            
+            self.currentStatus = duration > 0 ? "Transcribing audio (\(Int(duration))s)..." : "Transcribing audio..."
+            
+            while currentFrame < audioFile.length {
+                let remainingFrames = AVAudioFrameCount(audioFile.length - currentFrame)
+                let framesToRead = min(sourceFramesPerChunk, remainingFrames)
+                
+                // Read chunk from file
+                guard let buffer = AVAudioPCMBuffer(pcmFormat: fileFormat, frameCapacity: framesToRead) else {
+                    throw TranscriptionError.audioConversionFailed("Could not create audio buffer")
+                }
+                
+                audioFile.framePosition = currentFrame
+                do {
+                    try audioFile.read(into: buffer, frameCount: framesToRead)
+                } catch {
+                    throw TranscriptionError.audioConversionFailed("Could not read audio chunk: \(error.localizedDescription)")
+                }
+                
+                // Convert buffer to 16kHz mono Float32 samples
+                let samples: [Float]
+                do {
+                    samples = try self.resampleBuffer(buffer, targetSampleRate: sampleRate)
+                } catch {
+                    throw TranscriptionError.audioConversionFailed("Could not resample audio: \(error.localizedDescription)")
+                }
+                
+                // Skip if chunk is too short (< 1 second)
+                guard samples.count >= Int(sampleRate) else {
+                    currentFrame += AVAudioFramePosition(framesToRead)
+                    continue
+                }
+                
+                // Transcribe this chunk
+                let chunkResult = try await asrManager.transcribe(samples, source: AudioSource.system)
+                
+                if !chunkResult.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    allTranscriptions.append(chunkResult.text)
+                    totalConfidence += chunkResult.confidence
+                    chunkCount += 1
+                }
+                
+                currentFrame += AVAudioFramePosition(framesToRead)
+                
+                // Update progress
+                let progressPercent = Double(currentFrame) / Double(audioFile.length)
+                self.progress = 0.3 + (progressPercent * 0.6) // Progress from 30% to 90%
+                self.currentStatus = "Transcribing... \(Int(progressPercent * 100))%"
+            }
+            
+            // Combine all chunk transcriptions
+            let finalText = allTranscriptions.joined(separator: " ")
+            let avgConfidence = chunkCount > 0 ? totalConfidence / Float(chunkCount) : 0
+            
+            let transcriptionResult = (text: finalText, confidence: avgConfidence)
 
             self.currentStatus = "Complete!"
             self.progress = 1.0
@@ -238,5 +315,81 @@ final class MeetingTranscriptionService: ObservableObject {
         self.error = nil
         self.currentStatus = ""
         self.progress = 0.0
+    }
+    
+    // MARK: - Audio Resampling Helpers
+    
+    /// Resample an audio buffer to 16kHz mono Float32 samples
+    /// - Parameters:
+    ///   - buffer: Source audio buffer
+    ///   - targetSampleRate: Target sample rate (default 16000 Hz)
+    /// - Returns: Array of Float32 samples at target sample rate
+    private nonisolated func resampleBuffer(_ buffer: AVAudioPCMBuffer, targetSampleRate: Double = 16_000) throws -> [Float] {
+        let sourceFormat = buffer.format
+        let sourceSampleRate = sourceFormat.sampleRate
+        let sourceChannels = sourceFormat.channelCount
+        
+        // Create target format (16kHz mono Float32)
+        guard let targetFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: targetSampleRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw NSError(domain: "MeetingTranscriptionService", code: -1, 
+                         userInfo: [NSLocalizedDescriptionKey: "Could not create target audio format"])
+        }
+        
+        // If already in correct format, just extract samples
+        if sourceSampleRate == targetSampleRate && sourceChannels == 1 {
+            guard let channelData = buffer.floatChannelData else {
+                throw NSError(domain: "MeetingTranscriptionService", code: -2,
+                             userInfo: [NSLocalizedDescriptionKey: "Could not access audio channel data"])
+            }
+            let frameLength = Int(buffer.frameLength)
+            return Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
+        }
+        
+        // Create converter
+        guard let converter = AVAudioConverter(from: sourceFormat, to: targetFormat) else {
+            throw NSError(domain: "MeetingTranscriptionService", code: -3,
+                         userInfo: [NSLocalizedDescriptionKey: "Could not create audio converter"])
+        }
+        
+        // Calculate output buffer size
+        let ratio = targetSampleRate / sourceSampleRate
+        let estimatedFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        
+        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: estimatedFrameCount + 1024) else {
+            throw NSError(domain: "MeetingTranscriptionService", code: -4,
+                         userInfo: [NSLocalizedDescriptionKey: "Could not create output buffer"])
+        }
+        
+        // Convert
+        var error: NSError?
+        var inputConsumed = false
+        
+        converter.convert(to: outputBuffer, error: &error) { inNumPackets, outStatus in
+            if inputConsumed {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            inputConsumed = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        if let error = error {
+            throw error
+        }
+        
+        // Extract samples
+        guard let channelData = outputBuffer.floatChannelData else {
+            throw NSError(domain: "MeetingTranscriptionService", code: -5,
+                         userInfo: [NSLocalizedDescriptionKey: "Could not access converted audio data"])
+        }
+        
+        let frameLength = Int(outputBuffer.frameLength)
+        return Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
     }
 }
