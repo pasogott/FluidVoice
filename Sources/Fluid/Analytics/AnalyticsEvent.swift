@@ -26,6 +26,9 @@ enum AnalyticsEvent: String {
     // AI settings
     case providerInterestClicked = "provider_interest_clicked"
 
+    // Prompts
+    case customPromptUsed = "custom_prompt_used"
+
     // Errors
     case errorOccurred = "error_occurred"
 }

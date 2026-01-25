@@ -1230,6 +1230,13 @@ struct ContentView: View {
         if let profile = SettingsStore.shared.selectedDictationPromptProfile {
             let promptBody = SettingsStore.stripBaseDictationPrompt(from: profile.prompt)
             if !promptBody.isEmpty {
+                AnalyticsService.shared.capture(
+                    .customPromptUsed,
+                    properties: self.customPromptAnalyticsProperties(
+                        promptSource: "profile",
+                        overrideEmpty: nil
+                    )
+                )
                 return SettingsStore.combineBasePrompt(with: promptBody)
             }
         }
@@ -1237,6 +1244,13 @@ struct ContentView: View {
         // Default override (including empty string to intentionally use no system prompt)
         if let override = SettingsStore.shared.defaultDictationPromptOverride {
             let trimmedOverride = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            AnalyticsService.shared.capture(
+                .customPromptUsed,
+                properties: self.customPromptAnalyticsProperties(
+                    promptSource: "default_override",
+                    overrideEmpty: trimmedOverride.isEmpty
+                )
+            )
             // Empty override means explicitly use no system prompt
             guard !trimmedOverride.isEmpty else { return override }
 
@@ -1245,6 +1259,28 @@ struct ContentView: View {
         }
 
         return SettingsStore.defaultDictationPromptText()
+    }
+
+    private func customPromptAnalyticsProperties(promptSource: String, overrideEmpty: Bool?) -> [String: Any] {
+        let providerID = SettingsStore.shared.selectedProviderID
+        let providerKey = self.providerKey(for: providerID)
+        let selectedModel = SettingsStore.shared.selectedModelByProvider[providerKey] ?? SettingsStore.shared.selectedModel ?? ""
+        let isCustomProvider = !ModelRepository.shared.isBuiltIn(providerID)
+        let providerName = isCustomProvider ? "Custom Provider" : ModelRepository.shared.displayName(for: providerID)
+
+        var properties: [String: Any] = [
+            "prompt_source": promptSource,
+            "provider_id": isCustomProvider ? "custom" : providerID,
+            "provider_name": providerName,
+            "provider_type": isCustomProvider ? "custom" : "built_in",
+        ]
+        if !selectedModel.isEmpty {
+            properties["model"] = isCustomProvider ? "custom" : selectedModel
+        }
+        if let overrideEmpty {
+            properties["override_empty"] = overrideEmpty
+        }
+        return properties
     }
 
     // MARK: - Local Endpoint Detection
