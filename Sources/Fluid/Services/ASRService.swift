@@ -40,6 +40,24 @@ private actor TranscriptionExecutor {
     }
 }
 
+private actor ModelDownloadRegistry {
+    private var tasks: [String: Task<Void, Error>] = [:]
+
+    func run(for key: String, operation: @escaping () async throws -> Void) async throws {
+        if let existing = tasks[key] {
+            return try await existing.value
+        }
+
+        let task = Task {
+            try await operation()
+        }
+        self.tasks[key] = task
+        defer { tasks[key] = nil }
+
+        try await task.value
+    }
+}
+
 /// A comprehensive speech recognition service that handles real-time audio transcription.
 ///
 /// This service manages the entire ASR (Automatic Speech Recognition) pipeline including:
@@ -93,6 +111,7 @@ final class ASRService: ObservableObject {
 
     private var downloadProgressTask: Task<Void, Never>?
     private var hasCompletedFirstTranscription: Bool = false // Track if model has warmed up with first transcription
+    private let downloadRegistry = ModelDownloadRegistry()
 
     // MARK: - Error Handling
 
@@ -225,18 +244,35 @@ final class ASRService: ObservableObject {
     ///   - model: The model to download
     ///   - progressHandler: Optional callback for download progress (0.0 to 1.0)
     func downloadModel(_ model: SettingsStore.SpeechModel, progressHandler: ((Double) -> Void)?) async throws {
-        DebugLogger.shared.info("Downloading model: \(model.displayName) (without changing active selection)", source: "ASRService")
+        try await self.downloadRegistry.run(for: model.id) { [weak self] in
+            guard let self else { return }
 
-        // Get a fresh provider for this specific model (uses modelOverride for Whisper)
-        let provider = self.getProvider(for: model)
+            await MainActor.run {
+                self.downloadingModelId = model.id
+            }
 
-        // Prepare (download) the model
-        try await provider.prepare(progressHandler: { progress in
-            let clamped = max(0.0, min(1.0, progress))
-            progressHandler?(clamped)
-        })
+            defer {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.downloadingModelId == model.id {
+                        self.downloadingModelId = nil
+                    }
+                }
+            }
 
-        DebugLogger.shared.info("Model download completed: \(model.displayName)", source: "ASRService")
+            DebugLogger.shared.info("Downloading model: \(model.displayName) (without changing active selection)", source: "ASRService")
+
+            // Get a fresh provider for this specific model (uses modelOverride for Whisper)
+            let provider = await MainActor.run { self.getProvider(for: model) }
+
+            // Prepare (download) the model
+            try await provider.prepare(progressHandler: { progress in
+                let clamped = max(0.0, min(1.0, progress))
+                progressHandler?(clamped)
+            })
+
+            DebugLogger.shared.info("Model download completed: \(model.displayName)", source: "ASRService")
+        }
     }
 
     /// Call this when the transcription provider setting changes to reset state

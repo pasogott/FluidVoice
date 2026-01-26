@@ -198,6 +198,28 @@ extension VoiceEngineSettingsView {
 
                     Spacer()
                 }
+
+                // Memory warning for large models
+                if let memoryWarning = model.memoryWarning {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        Text(memoryWarning)
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(.orange.opacity(0.1))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .stroke(.orange.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 

@@ -136,6 +136,34 @@ final class WhisperProvider: TranscriptionProvider {
             )
         }
 
+        // Check available memory before loading large models
+        let selectedModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
+        let requiredMemoryGB = selectedModel.requiredMemoryGB
+        let availableMemoryGB = Self.availableMemoryGB()
+
+        DebugLogger.shared.info(
+            "WhisperProvider: Memory check - Required: \(String(format: "%.1f", requiredMemoryGB))GB, Available: \(String(format: "%.1f", availableMemoryGB))GB",
+            source: "WhisperProvider"
+        )
+
+        if availableMemoryGB < requiredMemoryGB {
+            let errorMessage = """
+            Insufficient memory for \(selectedModel.displayName).
+            Required: \(String(format: "%.1f", requiredMemoryGB)) GB
+            Available: \(String(format: "%.1f", availableMemoryGB)) GB
+
+            Please try a smaller model (e.g., Whisper Base or Small) or close other applications to free up memory.
+            """
+
+            DebugLogger.shared.error("WhisperProvider: \(errorMessage)", source: "WhisperProvider")
+
+            throw NSError(
+                domain: "WhisperProvider",
+                code: -4,
+                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+            )
+        }
+
         // Load the model
         DebugLogger.shared.info("WhisperProvider: Loading Whisper model...", source: "WhisperProvider")
         self.whisper = Whisper(fromFileURL: self.modelURL)
@@ -143,6 +171,37 @@ final class WhisperProvider: TranscriptionProvider {
         self.loadedModelName = currentModelName
         self.isReady = true
         DebugLogger.shared.info("WhisperProvider: Model ready (\(currentModelName))", source: "WhisperProvider")
+    }
+
+    /// Returns the available system memory in GB
+    private static func availableMemoryGB() -> Double {
+        var pageSize: vm_size_t = 0
+        host_page_size(mach_host_self(), &pageSize)
+
+        var vmStats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+
+        let result = withUnsafeMutablePointer(to: &vmStats) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPointer in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, intPointer, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            // Fallback: assume we have enough memory if we can't check
+            DebugLogger.shared.warning("WhisperProvider: Failed to get memory stats, assuming sufficient memory", source: "WhisperProvider")
+            return 16.0
+        }
+
+        // Calculate free + inactive memory (memory that can be reclaimed)
+        let freePages = UInt64(vmStats.free_count)
+        let inactivePages = UInt64(vmStats.inactive_count)
+        let purgablePages = UInt64(vmStats.purgeable_count)
+
+        let availableBytes = (freePages + inactivePages + purgablePages) * UInt64(pageSize)
+        let availableGB = Double(availableBytes) / (1024 * 1024 * 1024)
+
+        return availableGB
     }
 
     func transcribe(_ samples: [Float]) async throws -> ASRTranscriptionResult {

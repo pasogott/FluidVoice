@@ -113,6 +113,8 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
     func downloadSpeechModel(_ model: SettingsStore.SpeechModel) {
         guard !self.asr.isRunning else { return }
         guard self.downloadingModel == nil else { return } // Prevent concurrent downloads
+        self.downloadingModel = model
+        self.downloadProgress = 0.0
 
         Task {
             // Mark this model as downloading

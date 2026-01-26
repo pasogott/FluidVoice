@@ -64,8 +64,9 @@ final class FluidAudioProvider: TranscriptionProvider {
 
     func modelsExistOnDisk() -> Bool {
         let baseCacheDir = AsrModels.defaultCacheDirectory().deletingLastPathComponent()
+        let selectedModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
 
-        if SettingsStore.shared.selectedSpeechModel == .parakeetTDTv2 {
+        if selectedModel == .parakeetTDTv2 {
             let v2CacheDir = baseCacheDir.appendingPathComponent("parakeet-tdt-0.6b-v2-coreml")
             return FileManager.default.fileExists(atPath: v2CacheDir.path)
         } else {
@@ -76,7 +77,7 @@ final class FluidAudioProvider: TranscriptionProvider {
 
     func clearCache() async throws {
         let baseCacheDir = AsrModels.defaultCacheDirectory().deletingLastPathComponent()
-        let selectedModel = SettingsStore.shared.selectedSpeechModel
+        let selectedModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
 
         if selectedModel == .parakeetTDTv2 {
             // Clear v2 cache only

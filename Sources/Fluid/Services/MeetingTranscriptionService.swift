@@ -218,6 +218,13 @@ final class MeetingTranscriptionService: ObservableObject {
                 self.currentStatus = "Transcribing... \(Int(progressPercent * 100))%"
             }
 
+            if allTranscriptions.isEmpty {
+                DebugLogger.shared.warning(
+                    "No audio chunks were long enough to transcribe (minimum 1 second required)",
+                    source: "MeetingTranscriptionService"
+                )
+            }
+
             // Combine all chunk transcriptions
             let finalText = allTranscriptions.joined(separator: " ")
             let avgConfidence = chunkCount > 0 ? totalConfidence / Float(chunkCount) : 0
@@ -377,7 +384,7 @@ final class MeetingTranscriptionService: ObservableObject {
 
         converter.convert(to: outputBuffer, error: &error) { _, outStatus in
             if inputConsumed {
-                outStatus.pointee = .noDataNow
+                outStatus.pointee = .endOfStream
                 return nil
             }
             inputConsumed = true
