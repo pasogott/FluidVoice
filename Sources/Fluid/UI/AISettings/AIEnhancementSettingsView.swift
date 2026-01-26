@@ -6,6 +6,10 @@ struct AIEnhancementSettingsView: View {
     @ObservedObject var promptTest: DictationPromptTestCoordinator
     let theme: AppTheme
     @State var expandedProviderID: String? = nil
+    @State var providerSearchText: String = ""
+    @State var fluid1InterestEmail: String = ""
+    @State var fluid1InterestErrorMessage: String = ""
+    @State var fluid1InterestIsSubmitting: Bool = false
 
     var body: some View {
         self.aiConfigurationCard

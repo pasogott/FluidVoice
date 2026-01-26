@@ -23,6 +23,9 @@ enum AnalyticsEvent: String {
     // Meeting transcription
     case meetingTranscriptionCompleted = "meeting_transcription_completed"
 
+    // Prompts
+    case customPromptUsed = "custom_prompt_used"
+
     // Errors
     case errorOccurred = "error_occurred"
 }

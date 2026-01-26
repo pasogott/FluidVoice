@@ -52,7 +52,7 @@ extension AIEnhancementSettingsView {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 12) {
                         HStack(spacing: 10) {
-                            Image(systemName: "sparkles")
+                            Image(systemName: "brain")
                                 .font(.title3)
                                 .foregroundStyle(self.theme.palette.accent)
                             Text("AI Enhancement")
@@ -231,7 +231,15 @@ extension AIEnhancementSettingsView {
     }
 
     private var allProvidersSection: some View {
-        let count = self.unverifiedProviderItems.count
+        let query = self.providerSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let items = self.unverifiedProviderItems
+        let filteredItems = query.isEmpty
+            ? items
+            : items.filter {
+                $0.name.localizedCaseInsensitiveContains(query) ||
+                    $0.id.localizedCaseInsensitiveContains(query)
+            }
+        let count = filteredItems.count
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "square.grid.2x2")
@@ -245,12 +253,37 @@ extension AIEnhancementSettingsView {
                     .foregroundStyle(self.theme.palette.tertiaryText)
             }
 
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                TextField("Search providers", text: self.$providerSearchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(self.theme.palette.contentBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
+                    )
+            )
+
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: 6) {
-                        ForEach(self.unverifiedProviderItems) { item in
+                        ForEach(filteredItems) { item in
                             self.providerCard(item)
                                 .id(item.id)
+                        }
+                        if filteredItems.isEmpty, !query.isEmpty {
+                            Text("No providers match \"\(query)\"")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         self.customProviderButton
                             .id("custom-provider")
@@ -348,9 +381,22 @@ extension AIEnhancementSettingsView {
 
     private func providerCard(_ item: ProviderItem) -> some View {
         let isAppleDisabled = item.id == "apple-intelligence-disabled"
-        let isComingSoon = item.id == "fluid-1" || isAppleDisabled
-        let isExpanded = !isComingSoon && self.expandedProviderID == item.id
+        let isFluidInterest = item.id == "fluid-1"
+        let isComingSoon = isAppleDisabled
+        let isExpanded = self.expandedProviderID == item.id && !isAppleDisabled
         let status = self.providerStatus(for: item)
+        let borderColor = isExpanded
+            ? self.theme.palette.accent.opacity(0.5)
+            : (isFluidInterest ? self.theme.palette.accent.opacity(0.3) : self.theme.palette.cardBorder.opacity(0.3))
+        let statusView = HStack(spacing: 5) {
+            if !status.icon.isEmpty {
+                Image(systemName: status.icon)
+                    .font(.system(size: 10))
+            }
+            Text(status.text)
+        }
+        .font(.caption2)
+        .foregroundStyle(status.color)
 
         return VStack(alignment: .leading, spacing: 0) {
             Button(action: { if !isComingSoon { self.toggleProviderExpansion(item.id) } }) {
@@ -363,15 +409,21 @@ extension AIEnhancementSettingsView {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(isComingSoon ? self.theme.palette.accent : self.theme.palette.primaryText)
 
-                        HStack(spacing: 5) {
-                            if !status.icon.isEmpty {
-                                Image(systemName: status.icon)
-                                    .font(.system(size: 10))
-                            }
-                            Text(status.text)
-                                .font(.caption2)
+                        if isFluidInterest {
+                            statusView
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule()
+                                        .fill(self.theme.palette.accent.opacity(0.12))
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(self.theme.palette.accent.opacity(0.3), lineWidth: 1)
+                                        )
+                                )
+                        } else {
+                            statusView
                         }
-                        .foregroundStyle(status.color)
                     }
 
                     Spacer()
@@ -395,9 +447,15 @@ extension AIEnhancementSettingsView {
                     .background(self.theme.palette.separator.opacity(0.5))
                     .padding(.horizontal, 14)
 
-                self.providerDetailsSection(for: item)
-                    .padding(14)
-                    .padding(.top, 4)
+                if isFluidInterest {
+                    self.fluid1InterestSection
+                        .padding(14)
+                        .padding(.top, 4)
+                } else {
+                    self.providerDetailsSection(for: item)
+                        .padding(14)
+                        .padding(.top, 4)
+                }
             }
         }
         .frame(maxWidth: .infinity)
@@ -408,16 +466,17 @@ extension AIEnhancementSettingsView {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(
-                    isExpanded ? self.theme.palette.accent.opacity(0.5) : self.theme.palette.cardBorder.opacity(0.3),
-                    lineWidth: isExpanded ? 1.5 : 1
-                )
+                .stroke(borderColor, lineWidth: isExpanded ? 1.5 : 1)
         )
     }
 
     private func providerStatus(for item: ProviderItem) -> (text: String, color: Color, icon: String) {
         if item.id == "fluid-1" {
-            return ("Coming Soon · On Device", self.theme.palette.accent, "")
+            let hasInterest = self.settings.fluid1InterestCaptured
+            if hasInterest {
+                return ("Thanks · Coming soon", self.theme.palette.accent, "checkmark.circle.fill")
+            }
+            return ("Early access · Tap to join", self.theme.palette.accent, "hand.tap")
         }
         if item.id == "apple-intelligence-disabled" {
             return ("Unavailable", .secondary, "lock.slash")
@@ -438,10 +497,19 @@ extension AIEnhancementSettingsView {
     }
 
     private var isComingSoonProvider: (ProviderItem) -> Bool {
-        { $0.id == "fluid-1" || $0.id == "apple-intelligence-disabled" }
+        { $0.id == "apple-intelligence-disabled" }
     }
 
     private func toggleProviderExpansion(_ providerID: String) {
+        if providerID == "fluid-1" {
+            if self.expandedProviderID == providerID {
+                self.expandedProviderID = nil
+            } else {
+                self.expandedProviderID = providerID
+                self.fluid1InterestErrorMessage = ""
+            }
+            return
+        }
         if self.expandedProviderID == providerID {
             self.expandedProviderID = nil
             self.viewModel.showingEditProvider = false
@@ -452,6 +520,176 @@ extension AIEnhancementSettingsView {
             self.expandedProviderID = providerID
             self.selectProvider(providerID)
         }
+    }
+
+    private var fluid1InterestSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let hasInterest = self.settings.fluid1InterestCaptured
+            if hasInterest {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Thank you — coming soon")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+
+                Text("We saved your interest in Fluid-1, our private on-device model. We'll notify you when it's ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "envelope.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(self.theme.palette.accent)
+                    Text("Join Fluid-1 early access")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+
+                Text("Share your email to get notified when our private on-device model is ready.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Email")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    TextField("you@example.com", text: self.$fluid1InterestEmail)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 13))
+                        .onChange(of: self.fluid1InterestEmail) { _, _ in
+                            if !self.fluid1InterestErrorMessage.isEmpty {
+                                self.fluid1InterestErrorMessage = ""
+                            }
+                        }
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: { self.submitFluid1Interest() }) {
+                        HStack(spacing: 6) {
+                            if self.fluid1InterestIsSubmitting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Image(systemName: "paperplane.fill")
+                                    .font(.system(size: 11))
+                            }
+                            Text("Join early access")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(GlassButtonStyle(height: AISettingsLayout.controlHeight))
+                    .disabled(self.fluid1InterestIsSubmitting)
+                }
+
+                if !self.fluid1InterestErrorMessage.isEmpty {
+                    Text(self.fluid1InterestErrorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(self.theme.palette.accent.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(self.theme.palette.accent.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
+
+    private func submitFluid1Interest() {
+        guard !self.settings.fluid1InterestCaptured else { return }
+        let email = self.fluid1InterestEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !email.isEmpty else {
+            self.fluid1InterestErrorMessage = "Enter your email to join early access."
+            return
+        }
+        guard self.isValidEmail(email) else {
+            self.fluid1InterestErrorMessage = "Enter a valid email address."
+            return
+        }
+        self.fluid1InterestErrorMessage = ""
+        self.fluid1InterestIsSubmitting = true
+
+        Task {
+            let success = await self.sendFluid1Interest(email: email)
+            await MainActor.run {
+                self.fluid1InterestIsSubmitting = false
+                if success {
+                    self.settings.fluid1InterestCaptured = true
+                    self.fluid1InterestEmail = ""
+                } else {
+                    self.fluid1InterestErrorMessage = "We couldn't save your interest. Please try again."
+                }
+            }
+        }
+    }
+
+    private func sendFluid1Interest(email: String) async -> Bool {
+        guard let url = URL(string: "https://altic.dev/api/fluid/fluid-model-interest") else {
+            DebugLogger.shared.error("Invalid Fluid-1 interest API URL", source: "AISettingsView")
+            return false
+        }
+
+        let payload: [String: Any] = [
+            "emailId": email,
+            "modelName": "Fluid-1",
+        ]
+
+        guard JSONSerialization.isValidJSONObject(payload) else { return false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            if let httpResponse = response as? HTTPURLResponse {
+                let success = (200...299).contains(httpResponse.statusCode)
+                if success {
+                    DebugLogger.shared.info("Fluid-1 interest submitted", source: "AISettingsView")
+                } else {
+                    DebugLogger.shared.error(
+                        "Fluid-1 interest submission failed with status: \(httpResponse.statusCode)",
+                        source: "AISettingsView"
+                    )
+                }
+                return success
+            }
+            return false
+        } catch {
+            DebugLogger.shared.error(
+                "Network error submitting Fluid-1 interest: \(error.localizedDescription)",
+                source: "AISettingsView"
+            )
+            return false
+        }
+    }
+
+    private func isValidEmail(_ email: String) -> Bool {
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.contains("@") else { return false }
+        let parts = trimmed.split(separator: "@", omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return false }
+
+        let local = String(parts[0])
+        let domain = String(parts[1])
+        guard !local.isEmpty, !domain.isEmpty else { return false }
+        guard !local.hasPrefix("."), !local.hasSuffix(".") else { return false }
+        guard !domain.hasPrefix("."), !domain.hasSuffix(".") else { return false }
+        guard !local.contains(".."), !domain.contains("..") else { return false }
+
+        let domainParts = domain.split(separator: ".", omittingEmptySubsequences: false)
+        guard domainParts.count >= 2 else { return false }
+        guard domainParts.allSatisfy({ !$0.isEmpty }) else { return false }
+        guard let tld = domainParts.last, tld.count >= 2 else { return false }
+
+        return true
     }
 
     private func providerDetailsSection(for item: ProviderItem) -> AnyView {

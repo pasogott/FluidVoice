@@ -33,6 +33,7 @@ final class SettingsStore: ObservableObject {
         static let savedProviders = "SavedProviders"
         static let verifiedProviderFingerprints = "VerifiedProviderFingerprints"
         static let shareAnonymousAnalytics = "ShareAnonymousAnalytics"
+        static let fluid1InterestCaptured = "Fluid1InterestCaptured"
         static let hotkeyShortcutKey = "HotkeyShortcutKey"
         static let preferredInputDeviceUID = "PreferredInputDeviceUID"
         static let preferredOutputDeviceUID = "PreferredOutputDeviceUID"
@@ -370,6 +371,14 @@ final class SettingsStore: ObservableObject {
         set {
             objectWillChange.send()
             self.defaults.set(newValue, forKey: Keys.shareAnonymousAnalytics)
+        }
+    }
+
+    var fluid1InterestCaptured: Bool {
+        get { self.defaults.bool(forKey: Keys.fluid1InterestCaptured) }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.fluid1InterestCaptured)
         }
     }
 
