@@ -1547,27 +1547,25 @@ struct ContentView: View {
         }
 
         var didTypeExternally = false
-        await MainActor.run {
-            let frontmostApp = NSWorkspace.shared.frontmostApplication
-            let frontmostName = frontmostApp?.localizedName ?? "Unknown"
-            let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
-            let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let frontmostName = frontmostApp?.localizedName ?? "Unknown"
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
+        let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
 
-            DebugLogger.shared.debug(
-                "Typing decision → frontmost: \(frontmostName), fluidFrontmost: \(isFluidFrontmost), editorFocused: \(self.isTranscriptionFocused), willTypeExternally: \(shouldTypeExternally)",
-                source: "ContentView"
+        DebugLogger.shared.debug(
+            "Typing decision → frontmost: \(frontmostName), fluidFrontmost: \(isFluidFrontmost), editorFocused: \(self.isTranscriptionFocused), willTypeExternally: \(shouldTypeExternally)",
+            source: "ContentView"
+        )
+
+        if shouldTypeExternally {
+            // Await typing completion before proceeding to edit tracker
+            // This ensures the tracker window opens after text has been typed
+            await self.restoreFocusToRecordingTarget()
+            self.asr.typeTextToActiveField(
+                finalText,
+                preferredTargetPID: NotchContentState.shared.recordingTargetPID
             )
-
-            if shouldTypeExternally {
-                Task { @MainActor in
-                    await self.restoreFocusToRecordingTarget()
-                    self.asr.typeTextToActiveField(
-                        finalText,
-                        preferredTargetPID: NotchContentState.shared.recordingTargetPID
-                    )
-                }
-                didTypeExternally = true
-            }
+            didTypeExternally = true
         }
 
         if didTypeExternally {
@@ -1579,18 +1577,19 @@ struct ContentView: View {
                 ]
             )
 
+            // Now that typing is complete, start the edit tracker
             let wordsBucket = AnalyticsBuckets.bucketWords(AnalyticsBuckets.wordCount(in: finalText))
             let modelInfo = self.currentDictationAIModelInfo()
-            Task {
-                await PostTranscriptionEditTracker.shared.markTranscriptionCompleted(
-                    mode: AnalyticsMode.dictation.rawValue,
-                    outputMethod: AnalyticsOutputMethod.typed.rawValue,
-                    wordsBucket: wordsBucket,
-                    aiUsed: shouldUseAI,
-                    aiModel: modelInfo.model,
-                    aiProvider: modelInfo.provider
-                )
-            }
+            await PostTranscriptionEditTracker.shared.markTranscriptionCompleted(
+                mode: AnalyticsMode.dictation.rawValue,
+                outputMethod: AnalyticsOutputMethod.typed.rawValue,
+                wordsBucket: wordsBucket,
+                aiUsed: shouldUseAI,
+                aiModel: modelInfo.model,
+                aiProvider: modelInfo.provider
+            )
+
+            NotchOverlayManager.shared.hide()
         } else if SettingsStore.shared.copyTranscriptionToClipboard == false,
                   SettingsStore.shared.saveTranscriptionHistory
         {
@@ -1601,12 +1600,6 @@ struct ContentView: View {
                     "method": AnalyticsOutputMethod.historyOnly.rawValue,
                 ]
             )
-        }
-
-        if didTypeExternally {
-            Task { @MainActor in
-                NotchOverlayManager.shared.hide()
-            }
         }
     }
 

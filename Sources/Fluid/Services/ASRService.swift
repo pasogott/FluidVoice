@@ -251,27 +251,36 @@ final class ASRService: ObservableObject {
                 self.downloadingModelId = model.id
             }
 
-            defer {
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
+            // Use do-catch to ensure cleanup happens regardless of success/failure
+            do {
+                DebugLogger.shared.info("Downloading model: \(model.displayName) (without changing active selection)", source: "ASRService")
+
+                // Get a fresh provider for this specific model (uses modelOverride for Whisper)
+                let provider = await MainActor.run { self.getProvider(for: model) }
+
+                // Prepare (download) the model
+                try await provider.prepare(progressHandler: { progress in
+                    let clamped = max(0.0, min(1.0, progress))
+                    progressHandler?(clamped)
+                })
+
+                DebugLogger.shared.info("Model download completed: \(model.displayName)", source: "ASRService")
+
+                // Synchronously clear downloadingModelId on success
+                await MainActor.run {
                     if self.downloadingModelId == model.id {
                         self.downloadingModelId = nil
                     }
                 }
+            } catch {
+                // Synchronously clear downloadingModelId on failure
+                await MainActor.run {
+                    if self.downloadingModelId == model.id {
+                        self.downloadingModelId = nil
+                    }
+                }
+                throw error
             }
-
-            DebugLogger.shared.info("Downloading model: \(model.displayName) (without changing active selection)", source: "ASRService")
-
-            // Get a fresh provider for this specific model (uses modelOverride for Whisper)
-            let provider = await MainActor.run { self.getProvider(for: model) }
-
-            // Prepare (download) the model
-            try await provider.prepare(progressHandler: { progress in
-                let clamped = max(0.0, min(1.0, progress))
-                progressHandler?(clamped)
-            })
-
-            DebugLogger.shared.info("Model download completed: \(model.displayName)", source: "ASRService")
         }
     }
 

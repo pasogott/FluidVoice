@@ -123,9 +123,13 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
 
             do {
                 // Download the model WITHOUT changing the active selection
+                // Capture the model ID to guard against stale progress callbacks
+                let downloadingModelId = model.id
                 try await self.asr.downloadModel(model, progressHandler: { [weak self] progress in
                     Task { @MainActor in
-                        self?.downloadProgress = progress
+                        // Only update progress if we're still downloading this specific model
+                        guard let self, self.downloadingModel?.id == downloadingModelId else { return }
+                        self.downloadProgress = progress
                     }
                 })
 

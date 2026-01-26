@@ -96,8 +96,12 @@ final class WhisperProvider: TranscriptionProvider {
     }
 
     func prepare(progressHandler: ((Double) -> Void)? = nil) async throws {
+        // CRITICAL: Capture the target model at start to use consistently throughout this method.
+        // This prevents race conditions where SettingsStore could change after await points.
+        let targetModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
+        let currentModelName = targetModel.whisperModelFile?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "ggml-base.bin"
+
         // Detect model change: if a different model is now selected, force reload
-        let currentModelName = self.modelName
         if self.isReady, self.loadedModelName != currentModelName {
             DebugLogger.shared.info("WhisperProvider: Model changed from \(self.loadedModelName ?? "nil") to \(currentModelName), forcing reload", source: "WhisperProvider")
             self.isReady = false
@@ -137,8 +141,8 @@ final class WhisperProvider: TranscriptionProvider {
         }
 
         // Check available memory before loading large models
-        let selectedModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
-        let requiredMemoryGB = selectedModel.requiredMemoryGB
+        // Use the captured targetModel to ensure consistent memory validation
+        let requiredMemoryGB = targetModel.requiredMemoryGB
         let availableMemoryGB = Self.availableMemoryGB()
 
         DebugLogger.shared.info(
@@ -148,7 +152,7 @@ final class WhisperProvider: TranscriptionProvider {
 
         if availableMemoryGB < requiredMemoryGB {
             let errorMessage = """
-            Insufficient memory for \(selectedModel.displayName).
+            Insufficient memory for \(targetModel.displayName).
             Required: \(String(format: "%.1f", requiredMemoryGB)) GB
             Available: \(String(format: "%.1f", availableMemoryGB)) GB
 

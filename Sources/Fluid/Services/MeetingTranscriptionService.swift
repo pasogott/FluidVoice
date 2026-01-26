@@ -345,7 +345,11 @@ final class MeetingTranscriptionService: ObservableObject {
         }
 
         // If already in correct format, just extract samples
-        if sourceSampleRate == targetSampleRate, sourceChannels == 1 {
+        // Must also verify the format is Float32 - if source is Float64, floatChannelData returns nil
+        if sourceSampleRate == targetSampleRate,
+           sourceChannels == 1,
+           sourceFormat.commonFormat == .pcmFormatFloat32
+        {
             guard let channelData = buffer.floatChannelData else {
                 throw NSError(
                     domain: "MeetingTranscriptionService",
