@@ -19,15 +19,21 @@ final class WhisperProvider: TranscriptionProvider {
     private let overriddenModelDirectory: URL?
     private let urlSession: URLSession
 
-    init(modelDirectory: URL? = nil, urlSession: URLSession = .shared) {
+    /// Optional model override - if set, uses this model instead of the global setting.
+    /// Used for downloading specific models without changing the active selection.
+    var modelOverride: SettingsStore.SpeechModel?
+
+    init(modelDirectory: URL? = nil, urlSession: URLSession = .shared, modelOverride: SettingsStore.SpeechModel? = nil) {
         self.overriddenModelDirectory = modelDirectory
         self.urlSession = urlSession
+        self.modelOverride = modelOverride
     }
 
-    /// Model filename to use - reads from the unified SpeechModel setting
+    /// Model filename to use - reads from override first, then unified SpeechModel setting
     /// Models: tiny (~75MB), base (~142MB), small (~466MB), medium (~1.5GB), large (~2.9GB)
     private var modelName: String {
-        let configured = SettingsStore.shared.selectedSpeechModel.whisperModelFile?
+        let model = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
+        let configured = model.whisperModelFile?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let configured, !configured.isEmpty {
             return configured
@@ -63,8 +69,8 @@ final class WhisperProvider: TranscriptionProvider {
             return 300 * 1024 * 1024
         case "ggml-medium.bin":
             return 1000 * 1024 * 1024
-        case "ggml-large-v3-turbo.bin":
-            return 1200 * 1024 * 1024
+        // case "ggml-large-v3-turbo.bin": // buggy - so removed temporarily
+        //     return 1200 * 1024 * 1024
         case "ggml-large-v3.bin":
             return 2000 * 1024 * 1024
         default:
@@ -90,8 +96,12 @@ final class WhisperProvider: TranscriptionProvider {
     }
 
     func prepare(progressHandler: ((Double) -> Void)? = nil) async throws {
+        // CRITICAL: Capture the target model at start to use consistently throughout this method.
+        // This prevents race conditions where SettingsStore could change after await points.
+        let targetModel = self.modelOverride ?? SettingsStore.shared.selectedSpeechModel
+        let currentModelName = targetModel.whisperModelFile?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "ggml-base.bin"
+
         // Detect model change: if a different model is now selected, force reload
-        let currentModelName = self.modelName
         if self.isReady, self.loadedModelName != currentModelName {
             DebugLogger.shared.info("WhisperProvider: Model changed from \(self.loadedModelName ?? "nil") to \(currentModelName), forcing reload", source: "WhisperProvider")
             self.isReady = false
@@ -130,6 +140,34 @@ final class WhisperProvider: TranscriptionProvider {
             )
         }
 
+        // Check available memory before loading large models
+        // Use the captured targetModel to ensure consistent memory validation
+        let requiredMemoryGB = targetModel.requiredMemoryGB
+        let availableMemoryGB = Self.availableMemoryGB()
+
+        DebugLogger.shared.info(
+            "WhisperProvider: Memory check - Required: \(String(format: "%.1f", requiredMemoryGB))GB, Available: \(String(format: "%.1f", availableMemoryGB))GB",
+            source: "WhisperProvider"
+        )
+
+        if availableMemoryGB < requiredMemoryGB {
+            let errorMessage = """
+            Insufficient memory for \(targetModel.displayName).
+            Required: \(String(format: "%.1f", requiredMemoryGB)) GB
+            Available: \(String(format: "%.1f", availableMemoryGB)) GB
+
+            Please try a smaller model (e.g., Whisper Base or Small) or close other applications to free up memory.
+            """
+
+            DebugLogger.shared.error("WhisperProvider: \(errorMessage)", source: "WhisperProvider")
+
+            throw NSError(
+                domain: "WhisperProvider",
+                code: -4,
+                userInfo: [NSLocalizedDescriptionKey: errorMessage]
+            )
+        }
+
         // Load the model
         DebugLogger.shared.info("WhisperProvider: Loading Whisper model...", source: "WhisperProvider")
         self.whisper = Whisper(fromFileURL: self.modelURL)
@@ -137,6 +175,37 @@ final class WhisperProvider: TranscriptionProvider {
         self.loadedModelName = currentModelName
         self.isReady = true
         DebugLogger.shared.info("WhisperProvider: Model ready (\(currentModelName))", source: "WhisperProvider")
+    }
+
+    /// Returns the available system memory in GB
+    private static func availableMemoryGB() -> Double {
+        var pageSize: vm_size_t = 0
+        host_page_size(mach_host_self(), &pageSize)
+
+        var vmStats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+
+        let result = withUnsafeMutablePointer(to: &vmStats) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPointer in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, intPointer, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            // Fallback: assume we have enough memory if we can't check
+            DebugLogger.shared.warning("WhisperProvider: Failed to get memory stats, assuming sufficient memory", source: "WhisperProvider")
+            return 16.0
+        }
+
+        // Calculate free + inactive memory (memory that can be reclaimed)
+        let freePages = UInt64(vmStats.free_count)
+        let inactivePages = UInt64(vmStats.inactive_count)
+        let purgablePages = UInt64(vmStats.purgeable_count)
+
+        let availableBytes = (freePages + inactivePages + purgablePages) * UInt64(pageSize)
+        let availableGB = Double(availableBytes) / (1024 * 1024 * 1024)
+
+        return availableGB
     }
 
     func transcribe(_ samples: [Float]) async throws -> ASRTranscriptionResult {

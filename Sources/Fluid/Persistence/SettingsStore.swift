@@ -1462,7 +1462,7 @@ final class SettingsStore: ObservableObject {
         case whisperBase = "whisper-base"
         case whisperSmall = "whisper-small"
         case whisperMedium = "whisper-medium"
-        case whisperLargeTurbo = "whisper-large-turbo"
+        case whisperLargeTurbo = "whisper-large-turbo" // temporarily disabled in UI
         case whisperLarge = "whisper-large"
 
         var id: String { rawValue }
@@ -1479,7 +1479,7 @@ final class SettingsStore: ObservableObject {
             case .whisperBase: return "Whisper Base"
             case .whisperSmall: return "Whisper Small"
             case .whisperMedium: return "Whisper Medium"
-            case .whisperLargeTurbo: return "Whisper Large Turbo"
+            case .whisperLargeTurbo: return "Whisper Large Turbo (Disabled)"
             case .whisperLarge: return "Whisper Large"
             }
         }
@@ -1563,6 +1563,9 @@ final class SettingsStore: ObservableObject {
         /// Returns models available for the current Mac's architecture and OS
         static var availableModels: [SpeechModel] {
             allCases.filter { model in
+                if model == .whisperLargeTurbo {
+                    return false
+                }
                 // Filter by Apple Silicon requirement
                 if model.requiresAppleSilicon, !CPUArchitecture.isAppleSilicon {
                     return false
@@ -1625,6 +1628,42 @@ final class SettingsStore: ObservableObject {
                 return "Near-maximum accuracy with optimized speed."
             case .whisperLarge:
                 return "Best possible accuracy. Large download and memory usage."
+            }
+        }
+
+        /// Minimum recommended RAM in GB for this model to run safely
+        var requiredMemoryGB: Double {
+            switch self {
+            case .parakeetTDT, .parakeetTDTv2:
+                return 4.0
+            case .appleSpeech, .appleSpeechAnalyzer:
+                return 2.0 // Built-in, minimal overhead
+            case .whisperTiny:
+                return 2.0
+            case .whisperBase:
+                return 3.0
+            case .whisperSmall:
+                return 4.0
+            case .whisperMedium:
+                return 6.0
+            case .whisperLargeTurbo:
+                return 8.0
+            case .whisperLarge:
+                return 10.0 // Large model needs ~6-8GB working memory + model size
+            }
+        }
+
+        /// Warning text for models with high memory requirements, nil if no warning needed
+        var memoryWarning: String? {
+            switch self {
+            case .whisperLarge:
+                return "⚠️ Requires 10GB+ RAM. May crash on systems with limited memory."
+            case .whisperLargeTurbo:
+                return "⚠️ Requires 8GB+ RAM. May be unstable on some systems."
+            case .whisperMedium:
+                return "Requires 6GB+ RAM for stable operation."
+            default:
+                return nil
             }
         }
 
@@ -1716,7 +1755,7 @@ final class SettingsStore: ObservableObject {
         /// Large Whisper models are too slow for streaming, so they only do final transcription on stop.
         var supportsStreaming: Bool {
             switch self {
-            case .whisperMedium, .whisperLarge, .whisperLargeTurbo:
+            case .whisperMedium, .whisperLargeTurbo, .whisperLarge:
                 return false // Too slow for real-time chunk processing
             default:
                 return true // All other models support streaming

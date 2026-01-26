@@ -1447,13 +1447,24 @@ struct ContentView: View {
             // Don't reset overlay mode here - let it stay colored until it hides
         }
 
+        // Show "Transcribing..." state before calling stop() to keep overlay visible.
+        // The asr.stop() call performs the final transcription which can take a moment
+        // (especially for slower models like Whisper Medium/Large).
+        DebugLogger.shared.debug("Showing transcription processing state", source: "ContentView")
+        self.menuBarManager.setProcessing(true)
+        NotchOverlayManager.shared.updateTranscriptionText("Transcribing...")
+
         // Stop the ASR service and wait for transcription to complete
-        // This will set isRunning = false, which triggers overlay hide
-        // The overlay will hide while still showing the correct mode color (no gray transition)
+        // The processing indicator will stay visible during this phase
         let transcribedText = await asr.stop()
+
+        // Reset the transcription text display after transcription completes
+        NotchOverlayManager.shared.updateTranscriptionText("")
 
         guard transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
             DebugLogger.shared.debug("Transcription returned empty text", source: "ContentView")
+            // Hide processing state when returning early
+            self.menuBarManager.setProcessing(false)
             return
         }
 
@@ -1466,11 +1477,12 @@ struct ContentView: View {
 
             guard DictationAIPostProcessingGate.isConfigured() else {
                 promptTest.lastError = "AI post-processing is not configured. Enable AI Enhancement and configure a provider/model (and API key for non-local endpoints)."
+                self.menuBarManager.setProcessing(false)
                 return
             }
 
             promptTest.isProcessing = true
-            self.menuBarManager.setProcessing(true)
+            // Processing already true from above
             defer {
                 self.menuBarManager.setProcessing(false)
                 promptTest.isProcessing = false
@@ -1520,8 +1532,8 @@ struct ContentView: View {
         if shouldUseAI {
             DebugLogger.shared.debug("Routing transcription through AI post-processing", source: "ContentView")
 
-            // Show processing animation in notch
-            self.menuBarManager.setProcessing(true)
+            // Update overlay text to show we're now refining (processing already true)
+            NotchOverlayManager.shared.updateTranscriptionText("Refining...")
 
             finalText = await self.processTextWithAI(transcribedText)
 
@@ -1529,6 +1541,8 @@ struct ContentView: View {
             self.menuBarManager.setProcessing(false)
         } else {
             finalText = transcribedText
+            // No AI processing, hide the processing state
+            self.menuBarManager.setProcessing(false)
         }
 
         // Apply GAAV formatting as the FINAL step (after AI post-processing)
@@ -1571,27 +1585,25 @@ struct ContentView: View {
         }
 
         var didTypeExternally = false
-        await MainActor.run {
-            let frontmostApp = NSWorkspace.shared.frontmostApplication
-            let frontmostName = frontmostApp?.localizedName ?? "Unknown"
-            let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
-            let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let frontmostName = frontmostApp?.localizedName ?? "Unknown"
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
+        let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
 
-            DebugLogger.shared.debug(
-                "Typing decision → frontmost: \(frontmostName), fluidFrontmost: \(isFluidFrontmost), editorFocused: \(self.isTranscriptionFocused), willTypeExternally: \(shouldTypeExternally)",
-                source: "ContentView"
+        DebugLogger.shared.debug(
+            "Typing decision → frontmost: \(frontmostName), fluidFrontmost: \(isFluidFrontmost), editorFocused: \(self.isTranscriptionFocused), willTypeExternally: \(shouldTypeExternally)",
+            source: "ContentView"
+        )
+
+        if shouldTypeExternally {
+            // Await typing completion before proceeding to edit tracker
+            // This ensures the tracker window opens after text has been typed
+            await self.restoreFocusToRecordingTarget()
+            self.asr.typeTextToActiveField(
+                finalText,
+                preferredTargetPID: NotchContentState.shared.recordingTargetPID
             )
-
-            if shouldTypeExternally {
-                Task { @MainActor in
-                    await self.restoreFocusToRecordingTarget()
-                    self.asr.typeTextToActiveField(
-                        finalText,
-                        preferredTargetPID: NotchContentState.shared.recordingTargetPID
-                    )
-                }
-                didTypeExternally = true
-            }
+            didTypeExternally = true
         }
 
         if didTypeExternally {
@@ -1603,18 +1615,19 @@ struct ContentView: View {
                 ]
             )
 
+            // Now that typing is complete, start the edit tracker
             let wordsBucket = AnalyticsBuckets.bucketWords(AnalyticsBuckets.wordCount(in: finalText))
             let modelInfo = self.currentDictationAIModelInfo()
-            Task {
-                await PostTranscriptionEditTracker.shared.markTranscriptionCompleted(
-                    mode: AnalyticsMode.dictation.rawValue,
-                    outputMethod: AnalyticsOutputMethod.typed.rawValue,
-                    wordsBucket: wordsBucket,
-                    aiUsed: shouldUseAI,
-                    aiModel: modelInfo.model,
-                    aiProvider: modelInfo.provider
-                )
-            }
+            await PostTranscriptionEditTracker.shared.markTranscriptionCompleted(
+                mode: AnalyticsMode.dictation.rawValue,
+                outputMethod: AnalyticsOutputMethod.typed.rawValue,
+                wordsBucket: wordsBucket,
+                aiUsed: shouldUseAI,
+                aiModel: modelInfo.model,
+                aiProvider: modelInfo.provider
+            )
+
+            NotchOverlayManager.shared.hide()
         } else if SettingsStore.shared.copyTranscriptionToClipboard == false,
                   SettingsStore.shared.saveTranscriptionHistory
         {
@@ -1625,12 +1638,6 @@ struct ContentView: View {
                     "method": AnalyticsOutputMethod.historyOnly.rawValue,
                 ]
             )
-        }
-
-        if didTypeExternally {
-            Task { @MainActor in
-                NotchOverlayManager.shared.hide()
-            }
         }
     }
 

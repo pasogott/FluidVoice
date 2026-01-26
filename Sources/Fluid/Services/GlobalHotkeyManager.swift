@@ -3,6 +3,25 @@ import Foundation
 
 @MainActor
 final class GlobalHotkeyManager: NSObject {
+    private final class HotkeyState: @unchecked Sendable {
+        private let lock = NSLock()
+        var isKeyPressed = false
+        var isCommandModeKeyPressed = false
+        var isRewriteKeyPressed = false
+        var modifierOnlyKeyDown = false
+        var otherKeyPressedDuringModifier = false
+        var modifierPressStartTime: Date?
+        var pendingHoldModeStart: Task<Void, Never>?
+        var pendingHoldModeType: HoldModeType?
+
+        func withLock<T>(_ block: () -> T) -> T {
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            return block()
+        }
+    }
+
+    private let state = HotkeyState()
     private nonisolated(unsafe) var eventTap: CFMachPort?
     private nonisolated(unsafe) var runLoopSource: CFRunLoopSource?
     private let asrService: ASRService
@@ -17,21 +36,49 @@ final class GlobalHotkeyManager: NSObject {
     private var rewriteModeCallback: (() async -> Void)?
     private var cancelCallback: (() -> Bool)? // Returns true if handled
     private var pressAndHoldMode: Bool = SettingsStore.shared.pressAndHoldMode
-    // These state flags are accessed from CGEvent tap callback (may run off main thread)
-    // and @MainActor tasks. Marked nonisolated(unsafe) since they're simple booleans
-    // with effectively atomic reads/writes, and the event tap runs on main run loop.
-    private nonisolated(unsafe) var isKeyPressed = false
-    private nonisolated(unsafe) var isCommandModeKeyPressed = false
-    private nonisolated(unsafe) var isRewriteKeyPressed = false
+
+    private nonisolated var isKeyPressed: Bool {
+        get { self.state.withLock { self.state.isKeyPressed } }
+        set { self.state.withLock { self.state.isKeyPressed = newValue } }
+    }
+
+    private nonisolated var isCommandModeKeyPressed: Bool {
+        get { self.state.withLock { self.state.isCommandModeKeyPressed } }
+        set { self.state.withLock { self.state.isCommandModeKeyPressed = newValue } }
+    }
+
+    private nonisolated var isRewriteKeyPressed: Bool {
+        get { self.state.withLock { self.state.isRewriteKeyPressed } }
+        set { self.state.withLock { self.state.isRewriteKeyPressed = newValue } }
+    }
 
     // Modifier-only shortcut tracking: detect if another key was pressed during modifier hold
-    private nonisolated(unsafe) var modifierOnlyKeyDown = false
-    private nonisolated(unsafe) var otherKeyPressedDuringModifier = false
+    private nonisolated var modifierOnlyKeyDown: Bool {
+        get { self.state.withLock { self.state.modifierOnlyKeyDown } }
+        set { self.state.withLock { self.state.modifierOnlyKeyDown = newValue } }
+    }
+
+    private nonisolated var otherKeyPressedDuringModifier: Bool {
+        get { self.state.withLock { self.state.otherKeyPressedDuringModifier } }
+        set { self.state.withLock { self.state.otherKeyPressedDuringModifier = newValue } }
+    }
+
     // Reserved for future tap-vs-hold timing detection (e.g., quick tap to toggle vs long hold)
-    private var modifierPressStartTime: Date?
-    private nonisolated(unsafe) var pendingHoldModeStart: Task<Void, Never>?
+    private nonisolated var modifierPressStartTime: Date? {
+        get { self.state.withLock { self.state.modifierPressStartTime } }
+        set { self.state.withLock { self.state.modifierPressStartTime = newValue } }
+    }
+
+    private nonisolated var pendingHoldModeStart: Task<Void, Never>? {
+        get { self.state.withLock { self.state.pendingHoldModeStart } }
+        set { self.state.withLock { self.state.pendingHoldModeStart = newValue } }
+    }
+
     // Tracks which mode's pending start is active (for cancellation on key combos)
-    private var pendingHoldModeType: HoldModeType?
+    private nonisolated var pendingHoldModeType: HoldModeType? {
+        get { self.state.withLock { self.state.pendingHoldModeType } }
+        set { self.state.withLock { self.state.pendingHoldModeType = newValue } }
+    }
 
     private enum HoldModeType {
         case transcription
