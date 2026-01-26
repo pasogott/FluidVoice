@@ -626,13 +626,13 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    /// Where the recording overlay appears (default: top)
+    /// Where the recording overlay appears (default: bottom)
     var overlayPosition: OverlayPosition {
         get {
             guard let raw = self.defaults.string(forKey: Keys.overlayPosition),
                   let position = OverlayPosition(rawValue: raw)
             else {
-                return .top // Default to top (current behavior)
+                return .bottom // Default to bottom (menu overlay)
             }
             return position
         }
