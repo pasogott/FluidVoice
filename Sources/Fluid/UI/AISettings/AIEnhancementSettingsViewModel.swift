@@ -656,7 +656,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
             if let httpResponse = response as? HTTPURLResponse {
                 let statusCode = httpResponse.statusCode
 
-                if statusCode >= 200 && statusCode < 300 {
+                if statusCode >= 200, statusCode < 300 {
                     await MainActor.run {
                         self.updateConnectionStatus(.success, for: providerID)
                         self.connectionErrorMessage = ""
@@ -789,7 +789,6 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
             return "Network error: \(error.localizedDescription)"
         }
     }
-
 
     // MARK: - Provider/Model Handling
 
