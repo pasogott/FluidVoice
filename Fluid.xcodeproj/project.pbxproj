@@ -17,8 +17,8 @@
 		7CDB0A2F2F3C4D5600FB7CAD /* dictation_fixture.wav in Resources */ = {isa = PBXBuildFile; fileRef = 7CDB0A2B2F3C4D5600FB7CAD /* dictation_fixture.wav */; };
 		7CDB0A302F3C4D5600FB7CAD /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 7CDB0A2C2F3C4D5600FB7CAD /* XCTest.framework */; };
 		7CE006BD2E80EBE600DDCCD6 /* AppUpdater in Frameworks */ = {isa = PBXBuildFile; productRef = 7CE006BC2E80EBE600DDCCD6 /* AppUpdater */; };
-		7CF7A1A530AA000100F00001 /* Sources/Fluid/Resources/FV_start.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 7CF7A1A730AA000100F00001 /* Sources/Fluid/Resources/FV_start.m4a */; };
-		7CF7A1A630AA000100F00001 /* Sources/Fluid/Resources/FV_start_2.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 7CF7A1A830AA000100F00001 /* Sources/Fluid/Resources/FV_start_2.m4a */; };
+		7CF7A1A530AA000100F00001 /* FV_start.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 7CF7A1A730AA000100F00001 /* FV_start.m4a */; };
+		7CF7A1A630AA000100F00001 /* FV_start_2.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 7CF7A1A830AA000100F00001 /* FV_start_2.m4a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,8 +38,8 @@
 		7CDB0A2A2F3C4D5600FB7CAD /* AudioFixtureLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFixtureLoader.swift; sourceTree = "<group>"; };
 		7CDB0A2B2F3C4D5600FB7CAD /* dictation_fixture.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = dictation_fixture.wav; sourceTree = "<group>"; };
 		7CDB0A2C2F3C4D5600FB7CAD /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/MacOSX.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
-		7CF7A1A730AA000100F00001 /* Sources/Fluid/Resources/FV_start.m4a */ = {isa = PBXFileReference; lastKnownFileType = audio.m4a; path = Sources/Fluid/Resources/FV_start.m4a; sourceTree = "<group>"; };
-		7CF7A1A830AA000100F00001 /* Sources/Fluid/Resources/FV_start_2.m4a */ = {isa = PBXFileReference; lastKnownFileType = audio.m4a; path = Sources/Fluid/Resources/FV_start_2.m4a; sourceTree = "<group>"; };
+		7CF7A1A730AA000100F00001 /* FV_start.m4a */ = {isa = PBXFileReference; lastKnownFileType = audio.m4a; path = Sources/Fluid/Resources/FV_start.m4a; sourceTree = "<group>"; };
+		7CF7A1A830AA000100F00001 /* FV_start_2.m4a */ = {isa = PBXFileReference; lastKnownFileType = audio.m4a; path = Sources/Fluid/Resources/FV_start_2.m4a; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -81,7 +81,6 @@
 				7C078D912E3B339200FB7CAC /* Sources/Fluid */,
 				7CDB0A242F3C4D5600FB7CAD /* Tests */,
 				7CDB0A282F3C4D5600FB7CAD /* Frameworks */,
-				F744347C2F2ACCBF006BE5F9 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -134,15 +133,6 @@
 				7CDB0A2C2F3C4D5600FB7CAD /* XCTest.framework */,
 			);
 			name = Frameworks;
-			sourceTree = "<group>";
-		};
-		F744347C2F2ACCBF006BE5F9 /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-				7CF7A1A730AA000100F00001 /* Sources/Fluid/Resources/FV_start.m4a */,
-				7CF7A1A830AA000100F00001 /* Sources/Fluid/Resources/FV_start_2.m4a */,
-			);
-			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -245,8 +235,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7CF7A1A530AA000100F00001 /* Sources/Fluid/Resources/FV_start.m4a in Resources */,
-				7CF7A1A630AA000100F00001 /* Sources/Fluid/Resources/FV_start_2.m4a in Resources */,
+				7CF7A1A530AA000100F00001 /* FV_start.m4a in Resources */,
+				7CF7A1A630AA000100F00001 /* FV_start_2.m4a in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -424,7 +414,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J67LH9U7BN;
+				DEVELOPMENT_TEAM = V4J43B279J;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -478,7 +468,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J67LH9U7BN;
+				DEVELOPMENT_TEAM = V4J43B279J;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER = readwrite;
@@ -639,8 +629,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ejbills/mediaremote-adapter";
 			requirement = {
-				branch = master;
 				kind = branch;
+				branch = master;
 			};
 		};
 		7CE006BB2E80EBE600DDCCD6 /* XCRemoteSwiftPackageReference "AppUpdater" */ = {
