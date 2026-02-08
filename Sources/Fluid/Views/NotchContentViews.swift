@@ -260,6 +260,13 @@ struct NotchExpandedView: View {
         }
     }
 
+    // ContentView writes transient status strings into transcriptionText while processing
+    // (e.g. "Transcribing...", "Refining..."). Prefer that when present.
+    private var processingStatusText: String {
+        let t = self.contentState.transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? self.processingLabel : t
+    }
+
     private var hasTranscription: Bool {
         !self.contentState.transcriptionText.isEmpty
     }
@@ -373,7 +380,7 @@ struct NotchExpandedView: View {
 
                 // Mode label - shimmer effect when processing
                 if self.contentState.isProcessing {
-                    ShimmerText(text: self.processingLabel, color: self.modeColor)
+                    ShimmerText(text: self.processingStatusText, color: self.modeColor)
                 } else {
                     Text(self.modeLabel)
                         .font(.system(size: 9, weight: .medium))

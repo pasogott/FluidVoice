@@ -281,6 +281,13 @@ struct BottomOverlayView: View {
         }
     }
 
+    // ContentView writes transient status strings into transcriptionText while processing
+    // (e.g. "Transcribing...", "Refining..."). Prefer that when present.
+    private var processingStatusText: String {
+        let t = self.contentState.transcriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? self.processingLabel : t
+    }
+
     private var hasTranscription: Bool {
         !self.contentState.transcriptionText.isEmpty
     }
@@ -386,7 +393,7 @@ struct BottomOverlayView: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                 } else if self.contentState.isProcessing {
-                    Text(self.processingLabel)
+                    Text(self.processingStatusText)
                         .font(.system(size: self.layout.transFontSize, weight: .medium))
                         .foregroundStyle(self.modeColor.opacity(0.8))
                 }
