@@ -856,35 +856,44 @@ struct SettingsView: View {
 
                             Divider().padding(.vertical, 8)
 
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Transcription Preview Length")
-                                        .font(.body)
-                                    Text("How many recent characters appear in the notch/pill preview")
-                                        .font(.subheadline)
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Transcription Preview Length")
+                                            .font(.body)
+                                        Text("How many recent characters appear in the notch/pill preview")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Text("\(self.settings.transcriptionPreviewCharLimit) chars")
+                                        .font(.caption.monospaced())
                                         .foregroundStyle(.secondary)
                                 }
 
-                                Spacer()
+                                HStack(spacing: 10) {
+                                    Text("Less")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 36, alignment: .trailing)
 
-                                HStack(spacing: 6) {
                                     Slider(
                                         value: Binding(
                                             get: { Double(self.settings.transcriptionPreviewCharLimit) },
                                             set: { self.settings.transcriptionPreviewCharLimit = Int($0.rounded()) }
                                         ),
-                                        in: 40...2000,
-                                        step: 10
+                                        in: Double(SettingsStore.transcriptionPreviewCharLimitRange.lowerBound)...Double(SettingsStore.transcriptionPreviewCharLimitRange.upperBound),
+                                        step: Double(SettingsStore.transcriptionPreviewCharLimitStep)
                                     )
-                                    .frame(width: 110)
-                                    .controlSize(.small)
+                                    .controlSize(.regular)
 
-                                    Text("\(self.settings.transcriptionPreviewCharLimit) chars")
-                                        .font(.caption.monospaced())
+                                    Text("More")
+                                        .font(.caption)
                                         .foregroundStyle(.secondary)
-                                        .frame(width: 90, alignment: .trailing)
+                                        .frame(width: 36, alignment: .leading)
                                 }
-                                .frame(width: 200, alignment: .trailing)
                             }
 
                             // Bottom overlay specific settings (only show when bottom is selected)

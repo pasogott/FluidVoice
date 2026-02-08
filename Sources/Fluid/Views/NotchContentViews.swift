@@ -13,6 +13,8 @@ import SwiftUI
 @MainActor
 class NotchContentState: ObservableObject {
     static let shared = NotchContentState()
+    // Keep overlay state bounded even during very long recordings.
+    private static let maxStoredTranscriptionCharacters = SettingsStore.transcriptionPreviewCharLimitRange.upperBound
 
     @Published var transcriptionText: String = ""
     @Published var mode: OverlayMode = .dictation
@@ -63,7 +65,12 @@ class NotchContentState: ObservableObject {
 
 
     private init() {
-        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+        let previewLimitChanged = NotificationCenter.default.publisher(
+            for: NSNotification.Name("TranscriptionPreviewCharLimitChanged")
+        )
+        let defaultsChanged = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+
+        Publishers.Merge(previewLimitChanged, defaultsChanged)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.recomputeTranscriptionLines()
@@ -78,8 +85,10 @@ class NotchContentState: ObservableObject {
 
     /// Update transcription and recompute cached lines
     func updateTranscription(_ text: String) {
-        guard text != self.transcriptionText else { return }
-        self.transcriptionText = text
+        let boundedText = Self.tailCharacters(in: text, maxCharacters: Self.maxStoredTranscriptionCharacters)
+        guard boundedText != self.transcriptionText else { return }
+
+        self.transcriptionText = boundedText
         self.recomputeTranscriptionLines()
     }
 
@@ -88,12 +97,23 @@ class NotchContentState: ObservableObject {
         let text = self.transcriptionText
 
         guard !text.isEmpty else {
-            self.cachedPreviewText = ""
+            if !self.cachedPreviewText.isEmpty {
+                self.cachedPreviewText = ""
+            }
             return
         }
 
         let maxChars = SettingsStore.shared.transcriptionPreviewCharLimit
-        self.cachedPreviewText = text.count > maxChars ? String(text.suffix(maxChars)) : text
+        let previewText = Self.tailCharacters(in: text, maxCharacters: maxChars)
+        guard previewText != self.cachedPreviewText else { return }
+        self.cachedPreviewText = previewText
+    }
+
+    private static func tailCharacters(in text: String, maxCharacters: Int) -> String {
+        guard maxCharacters > 0, !text.isEmpty else { return "" }
+
+        let start = text.index(text.endIndex, offsetBy: -maxCharacters, limitedBy: text.startIndex) ?? text.startIndex
+        return String(text[start..<text.endIndex])
     }
 
     // MARK: - Recording State for Expanded View
@@ -278,6 +298,10 @@ struct NotchExpandedView: View {
         60
     }
 
+    private var previewMaxWidth: CGFloat {
+        180
+    }
+
     private func handlePromptHover(_ hovering: Bool) {
         self.promptHoverWorkItem?.cancel()
         let task = DispatchWorkItem {
@@ -423,10 +447,13 @@ struct NotchExpandedView: View {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.75))
                                 .multilineTextAlignment(.leading)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Color.clear.frame(height: 1).id("bottom")
                         }
-                        .frame(maxWidth: 180, maxHeight: self.previewMaxHeight, alignment: .leading)
+                        .frame(width: self.previewMaxWidth, alignment: .leading)
+                        .frame(maxHeight: self.previewMaxHeight, alignment: .leading)
                         .clipped()
                         .onAppear {
                             DispatchQueue.main.async {
@@ -869,6 +896,8 @@ struct NotchCommandOutputExpandedView: View {
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.75))
                                 .multilineTextAlignment(.leading)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             Color.clear.frame(height: 1).id("bottom")
                         }

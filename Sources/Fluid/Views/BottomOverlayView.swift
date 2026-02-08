@@ -17,6 +17,7 @@ final class BottomOverlayWindowController {
 
     private var window: NSPanel?
     private var audioSubscription: AnyCancellable?
+    private var pendingResizeWorkItem: DispatchWorkItem?
 
     private init() {
         NotificationCenter.default.addObserver(forName: NSNotification.Name("OverlayOffsetChanged"), object: nil, queue: .main) { [weak self] _ in
@@ -32,6 +33,9 @@ final class BottomOverlayWindowController {
     }
 
     func show(audioPublisher: AnyPublisher<CGFloat, Never>, mode: OverlayMode) {
+        self.pendingResizeWorkItem?.cancel()
+        self.pendingResizeWorkItem = nil
+
         // Update mode in content state
         NotchContentState.shared.mode = mode
         NotchContentState.shared.updateTranscription("")
@@ -68,6 +72,8 @@ final class BottomOverlayWindowController {
         // Cancel audio subscription
         self.audioSubscription?.cancel()
         self.audioSubscription = nil
+        self.pendingResizeWorkItem?.cancel()
+        self.pendingResizeWorkItem = nil
 
         // Reset state
         NotchContentState.shared.setProcessing(false)
@@ -90,7 +96,14 @@ final class BottomOverlayWindowController {
     }
 
     func refreshSizeForContent() {
-        self.updateSizeAndPosition()
+        self.pendingResizeWorkItem?.cancel()
+
+        // Debounce rapid streaming updates to avoid resize thrash.
+        let resizeWorkItem = DispatchWorkItem { [weak self] in
+            self?.updateSizeAndPosition()
+        }
+        self.pendingResizeWorkItem = resizeWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: resizeWorkItem)
     }
 
     /// Update window size based on current SwiftUI content and re-position
@@ -305,6 +318,10 @@ struct BottomOverlayView: View {
         self.layout.transFontSize * 4.2
     }
 
+    private var previewMaxWidth: CGFloat {
+        self.layout.waveformWidth * 2.2
+    }
+
     private var transcriptionVerticalPadding: CGFloat {
         max(4, self.layout.vPadding / 2)
     }
@@ -397,10 +414,13 @@ struct BottomOverlayView: View {
                                     .font(.system(size: self.layout.transFontSize, weight: .medium))
                                     .foregroundStyle(.white.opacity(0.9))
                                     .multilineTextAlignment(.leading)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 Color.clear.frame(height: 1).id("bottom")
                             }
-                            .frame(maxWidth: self.layout.waveformWidth * 2.2, maxHeight: self.previewMaxHeight)
+                            .frame(width: self.previewMaxWidth)
+                            .frame(maxHeight: self.previewMaxHeight)
                             .clipped()
                             .onAppear {
                                 DispatchQueue.main.async {
@@ -422,7 +442,7 @@ struct BottomOverlayView: View {
                 }
             }
             .frame(
-                maxWidth: self.layout.waveformWidth * 2.2,
+                maxWidth: self.previewMaxWidth,
                 minHeight: self.hasTranscription || self.contentState.isProcessing ? self.layout.transFontSize * 1.5 : 0
             )
 
