@@ -17,6 +17,7 @@ final class BottomOverlayWindowController {
 
     private var window: NSPanel?
     private var audioSubscription: AnyCancellable?
+    private var pendingResizeWorkItem: DispatchWorkItem?
 
     private init() {
         NotificationCenter.default.addObserver(forName: NSNotification.Name("OverlayOffsetChanged"), object: nil, queue: .main) { [weak self] _ in
@@ -32,6 +33,9 @@ final class BottomOverlayWindowController {
     }
 
     func show(audioPublisher: AnyPublisher<CGFloat, Never>, mode: OverlayMode) {
+        self.pendingResizeWorkItem?.cancel()
+        self.pendingResizeWorkItem = nil
+
         // Update mode in content state
         NotchContentState.shared.mode = mode
         NotchContentState.shared.updateTranscription("")
@@ -68,6 +72,8 @@ final class BottomOverlayWindowController {
         // Cancel audio subscription
         self.audioSubscription?.cancel()
         self.audioSubscription = nil
+        self.pendingResizeWorkItem?.cancel()
+        self.pendingResizeWorkItem = nil
 
         // Reset state
         NotchContentState.shared.setProcessing(false)
@@ -87,6 +93,17 @@ final class BottomOverlayWindowController {
 
     func setProcessing(_ processing: Bool) {
         NotchContentState.shared.setProcessing(processing)
+    }
+
+    func refreshSizeForContent() {
+        self.pendingResizeWorkItem?.cancel()
+
+        // Debounce rapid streaming updates to avoid resize thrash.
+        let resizeWorkItem = DispatchWorkItem { [weak self] in
+            self?.updateSizeAndPosition()
+        }
+        self.pendingResizeWorkItem = resizeWorkItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03, execute: resizeWorkItem)
     }
 
     /// Update window size based on current SwiftUI content and re-position
@@ -304,11 +321,20 @@ struct BottomOverlayView: View {
         return "Default"
     }
 
-    // Show last ~60 characters of transcription on single line
-    private var transcriptionSuffix: String {
-        let text = self.contentState.transcriptionText
-        let maxChars = 60
-        return text.count > maxChars ? "..." + String(text.suffix(maxChars)) : text
+    private var previewMaxHeight: CGFloat {
+        self.layout.transFontSize * 4.2
+    }
+
+    private var previewMaxWidth: CGFloat {
+        self.layout.waveformWidth * 2.2
+    }
+
+    private var transcriptionVerticalPadding: CGFloat {
+        max(4, self.layout.vPadding / 2)
+    }
+
+    private var transcriptionPreviewText: String {
+        self.contentState.cachedPreviewText
     }
 
     private func handlePromptHover(_ hovering: Bool) {
@@ -384,14 +410,38 @@ struct BottomOverlayView: View {
 
     var body: some View {
         VStack(spacing: self.layout.vPadding / 2) {
-            // Transcription text area (single line)
+            // Transcription text area (wrapped)
             Group {
                 if self.hasTranscription && !self.contentState.isProcessing {
-                    Text(self.transcriptionSuffix)
-                        .font(.system(size: self.layout.transFontSize, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.9))
-                        .lineLimit(1)
-                        .truncationMode(.head)
+                    let previewText = self.transcriptionPreviewText
+                    if !previewText.isEmpty {
+                        ScrollViewReader { proxy in
+                            ScrollView(.vertical, showsIndicators: false) {
+                                Text(previewText)
+                                    .font(.system(size: self.layout.transFontSize, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.9))
+                                    .multilineTextAlignment(.leading)
+                                    .lineLimit(nil)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Color.clear.frame(height: 1).id("bottom")
+                            }
+                            .frame(width: self.previewMaxWidth)
+                            .frame(maxHeight: self.previewMaxHeight)
+                            .clipped()
+                            .onAppear {
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                }
+                            }
+                            .onChange(of: previewText) { _, _ in
+                                DispatchQueue.main.async {
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                }
+                            }
+                        }
+                        .padding(.vertical, self.transcriptionVerticalPadding)
+                    }
                 } else if self.contentState.isProcessing {
                     ShimmerText(
                         text: self.processingStatusText,
@@ -400,7 +450,10 @@ struct BottomOverlayView: View {
                     )
                 }
             }
-            .frame(maxWidth: self.layout.waveformWidth * 2.2, minHeight: self.hasTranscription || self.contentState.isProcessing ? self.layout.transFontSize * 1.5 : 0)
+            .frame(
+                maxWidth: self.previewMaxWidth,
+                minHeight: self.hasTranscription || self.contentState.isProcessing ? self.layout.transFontSize * 1.5 : 0
+            )
 
             // Dictation prompt selector (only in dictation mode)
             if self.isDictationMode && !self.contentState.isProcessing {
@@ -480,6 +533,12 @@ struct BottomOverlayView: View {
         }
         .padding(.horizontal, self.layout.hPadding)
         .padding(.vertical, self.layout.vPadding)
+        .onChange(of: self.contentState.cachedPreviewText) { _, _ in
+            BottomOverlayWindowController.shared.refreshSizeForContent()
+        }
+        .onChange(of: self.contentState.isProcessing) { _, _ in
+            BottomOverlayWindowController.shared.refreshSizeForContent()
+        }
         .background(
             ZStack {
                 // Solid pitch black background

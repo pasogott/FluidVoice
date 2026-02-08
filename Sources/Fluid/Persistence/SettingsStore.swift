@@ -10,6 +10,9 @@ import FluidAudio
 
 final class SettingsStore: ObservableObject {
     static let shared = SettingsStore()
+    static let transcriptionPreviewCharLimitRange: ClosedRange<Int> = 50...800
+    static let transcriptionPreviewCharLimitStep = 50
+    static let defaultTranscriptionPreviewCharLimit = 150
     private let defaults = UserDefaults.standard
     private let keychain = KeychainService.shared
 
@@ -98,6 +101,7 @@ final class SettingsStore: ObservableObject {
         static let overlayPosition = "OverlayPosition"
         static let overlayBottomOffset = "OverlayBottomOffset"
         static let overlaySize = "OverlaySize"
+        static let transcriptionPreviewCharLimit = "TranscriptionPreviewCharLimit"
 
         // Media Playback Control
         static let pauseMediaDuringTranscription = "PauseMediaDuringTranscription"
@@ -680,6 +684,35 @@ final class SettingsStore: ObservableObject {
             // Post notification for live update if overlay is visible
             NotificationCenter.default.post(name: NSNotification.Name("OverlaySizeChanged"), object: nil)
         }
+    }
+
+    /// How many recent transcription characters show in overlays (default: 150)
+    var transcriptionPreviewCharLimit: Int {
+        get {
+            let stored = self.defaults.object(forKey: Keys.transcriptionPreviewCharLimit) as? NSNumber
+            let value = stored?.intValue ?? Self.defaultTranscriptionPreviewCharLimit
+            return Self.normalizedTranscriptionPreviewCharLimit(value)
+        }
+        set {
+            let clamped = Self.normalizedTranscriptionPreviewCharLimit(newValue)
+            guard clamped != self.transcriptionPreviewCharLimit else { return }
+
+            objectWillChange.send()
+            self.defaults.set(clamped, forKey: Keys.transcriptionPreviewCharLimit)
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TranscriptionPreviewCharLimitChanged"),
+                object: nil
+            )
+        }
+    }
+
+    private static func normalizedTranscriptionPreviewCharLimit(_ value: Int) -> Int {
+        let range = Self.transcriptionPreviewCharLimitRange
+        let clamped = max(range.lowerBound, min(range.upperBound, value))
+        let offset = clamped - range.lowerBound
+        let snappedOffset = Int((Double(offset) / Double(Self.transcriptionPreviewCharLimitStep)).rounded())
+            * Self.transcriptionPreviewCharLimitStep
+        return max(range.lowerBound, min(range.upperBound, range.lowerBound + snappedOffset))
     }
 
     // MARK: - Preferences Settings

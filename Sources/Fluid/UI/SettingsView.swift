@@ -864,6 +864,48 @@ struct SettingsView: View {
                                 .frame(width: 170, alignment: .trailing)
                             }
 
+                            Divider().padding(.vertical, 8)
+
+                            VStack(alignment: .leading, spacing: 10) {
+                                HStack(alignment: .top) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Transcription Preview Length")
+                                            .font(.body)
+                                        Text("How many recent characters appear in the notch/pill preview")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Text("\(self.settings.transcriptionPreviewCharLimit) chars")
+                                        .font(.caption.monospaced())
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                HStack(spacing: 10) {
+                                    Text("Less")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 36, alignment: .trailing)
+
+                                    Slider(
+                                        value: Binding(
+                                            get: { Double(self.settings.transcriptionPreviewCharLimit) },
+                                            set: { self.settings.transcriptionPreviewCharLimit = Int($0.rounded()) }
+                                        ),
+                                        in: Double(SettingsStore.transcriptionPreviewCharLimitRange.lowerBound)...Double(SettingsStore.transcriptionPreviewCharLimitRange.upperBound),
+                                        step: Double(SettingsStore.transcriptionPreviewCharLimitStep)
+                                    )
+                                    .controlSize(.regular)
+
+                                    Text("More")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 36, alignment: .leading)
+                                }
+                            }
+
                             // Bottom overlay specific settings (only show when bottom is selected)
                             if self.settings.overlayPosition == .bottom {
                                 Divider().padding(.vertical, 4)
