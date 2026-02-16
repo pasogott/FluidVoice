@@ -599,6 +599,7 @@ struct ContentView: View {
         .onDisappear {
             NotchContentState.shared.onPromptModeSwitchRequested = nil
             NotchContentState.shared.onOverlayModeSwitchRequested = nil
+            NotchContentState.shared.onReprocessLastRequested = nil
             Task { await self.asr.stopWithoutTranscription() }
             // Note: Overlay lifecycle is now managed by MenuBarManager
 
@@ -1722,6 +1723,81 @@ struct ContentView: View {
         }
     }
 
+    private func reprocessLastDictationFromHistory() {
+        guard let last = TranscriptionHistoryStore.shared.entries.first else {
+            DebugLogger.shared.info("Actions: Reprocess requested but history is empty", source: "ContentView")
+            return
+        }
+
+        let rawText = last.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty else {
+            DebugLogger.shared.info("Actions: Reprocess skipped because latest history raw text is empty", source: "ContentView")
+            return
+        }
+
+        DebugLogger.shared.info("Actions: Reprocessing latest dictation history entry", source: "ContentView")
+        Task { @MainActor in
+            await self.reprocessDictationText(rawText)
+        }
+    }
+
+    private func reprocessDictationText(_ transcribedText: String) async {
+        // If live recording is still active, stop it first so reprocess does not
+        // leave ASR running in the background (which causes the next hotkey press
+        // to behave like a stop instead of start).
+        if self.asr.isRunning {
+            DebugLogger.shared.info("Actions: stopping active recording before reprocess", source: "ContentView")
+            await self.asr.stopWithoutTranscription()
+        }
+
+        self.setActiveRecordingMode(.dictate)
+        self.menuBarManager.setProcessing(true)
+        NotchOverlayManager.shared.updateTranscriptionText("Reprocessing...")
+        await Task.yield()
+
+        var finalText = transcribedText
+        let shouldUseAI = DictationAIPostProcessingGate.isConfigured()
+        if shouldUseAI {
+            finalText = await self.processTextWithAI(transcribedText)
+        }
+
+        NotchOverlayManager.shared.updateTranscriptionText("")
+        self.menuBarManager.setProcessing(false)
+
+        finalText = ASRService.applyGAAVFormatting(finalText)
+        let appInfo = self.getCurrentAppInfo()
+
+        if SettingsStore.shared.saveTranscriptionHistory {
+            TranscriptionHistoryStore.shared.addEntry(
+                rawText: transcribedText,
+                processedText: finalText,
+                appName: appInfo.name,
+                windowTitle: appInfo.windowTitle
+            )
+        }
+
+        if SettingsStore.shared.copyTranscriptionToClipboard {
+            ClipboardService.copyToClipboard(finalText)
+        }
+
+        let focusedPID = TypingService.captureSystemFocusedPID()
+            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        NotchContentState.shared.recordingTargetPID = focusedPID
+
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
+        let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
+        if shouldTypeExternally {
+            await self.restoreFocusToRecordingTarget()
+            self.asr.typeTextToActiveField(
+                finalText,
+                preferredTargetPID: NotchContentState.shared.recordingTargetPID
+            )
+        }
+
+        self.clearActiveRecordingMode()
+    }
+
     // MARK: - Rewrite Mode Voice Processing
 
     private func processRewriteWithVoiceInstruction(_ instruction: String) async {
@@ -2111,6 +2187,9 @@ struct ContentView: View {
         }
         NotchContentState.shared.onOverlayModeSwitchRequested = { mode in
             self.handleLiveOverlayModeSwitch(mode)
+        }
+        NotchContentState.shared.onReprocessLastRequested = {
+            self.reprocessLastDictationFromHistory()
         }
 
         guard self.hotkeyManager == nil else { return }

@@ -129,6 +129,8 @@ class NotchContentState: ObservableObject {
     var onPromptModeSwitchRequested: ((SettingsStore.PromptMode) -> Void)?
     /// Called when the user requests a live overlay mode switch from the mode picker.
     var onOverlayModeSwitchRequested: ((OverlayMode) -> Void)?
+    /// Called when the user requests reprocessing the latest saved dictation entry.
+    var onReprocessLastRequested: (() -> Void)?
 
     /// Set recording state (for waveform visibility in expanded view)
     func setRecordingInExpandedMode(_ recording: Bool) {
