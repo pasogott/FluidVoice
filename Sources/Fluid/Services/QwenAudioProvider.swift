@@ -22,6 +22,8 @@ final class QwenAudioProvider: TranscriptionProvider {
     }
 
     let name = "Qwen3 ASR (FluidAudio)"
+    private let sampleRate = 16_000
+    private let maxSegmentSeconds: Int = 25
 
     var isAvailable: Bool {
         if #available(macOS 15.0, *) {
@@ -294,14 +296,38 @@ final class QwenAudioProvider: TranscriptionProvider {
     }
 
     func transcribeStreaming(_ samples: [Float]) async throws -> ASRTranscriptionResult {
-        try await self.transcribeInternal(samples, maxNewTokens: 192)
+        try await self.transcribeInternal(samples, maxNewTokens: 192, languageHint: self.preferredLanguageHint())
     }
 
     func transcribeFinal(_ samples: [Float]) async throws -> ASRTranscriptionResult {
-        try await self.transcribeInternal(samples, maxNewTokens: 512)
+        let maxSegmentSamples = self.maxSegmentSeconds * self.sampleRate
+        let languageHint = self.preferredLanguageHint()
+
+        if samples.count <= maxSegmentSamples {
+            return try await self.transcribeInternal(samples, maxNewTokens: 512, languageHint: languageHint)
+        }
+
+        var segments: [String] = []
+        var start = 0
+        while start < samples.count {
+            let end = min(start + maxSegmentSamples, samples.count)
+            let segment = Array(samples[start..<end])
+            let result = try await self.transcribeInternal(segment, maxNewTokens: 512, languageHint: languageHint)
+            let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                segments.append(text)
+            }
+            start = end
+        }
+
+        return ASRTranscriptionResult(text: segments.joined(separator: " "), confidence: 1.0)
     }
 
-    private func transcribeInternal(_ samples: [Float], maxNewTokens: Int) async throws -> ASRTranscriptionResult {
+    private func transcribeInternal(
+        _ samples: [Float],
+        maxNewTokens: Int,
+        languageHint: String?
+    ) async throws -> ASRTranscriptionResult {
         if #available(macOS 15.0, *) {
             guard let manager = self.manager else {
                 throw NSError(
@@ -313,7 +339,7 @@ final class QwenAudioProvider: TranscriptionProvider {
 
             let text = try await manager.transcribe(
                 audioSamples: samples,
-                language: String?.none,
+                language: languageHint,
                 maxNewTokens: maxNewTokens
             )
             return ASRTranscriptionResult(text: text, confidence: 1.0)
@@ -324,6 +350,17 @@ final class QwenAudioProvider: TranscriptionProvider {
             code: -4,
             userInfo: [NSLocalizedDescriptionKey: "Qwen3 ASR is unavailable on this macOS version."]
         )
+    }
+
+    private func preferredLanguageHint() -> String? {
+        guard let preferred = Locale.preferredLanguages.first else { return nil }
+        let code = preferred.split(separator: "-").first?.lowercased() ?? preferred.lowercased()
+        let supported = Set([
+            "zh", "en", "yue", "ar", "de", "fr", "es", "pt", "id", "it", "ko", "ru", "th",
+            "vi", "ja", "tr", "hi", "ms", "nl", "sv", "da", "fi", "pl", "cs", "fil", "fa",
+            "el", "hu", "mk", "ro"
+        ])
+        return supported.contains(code) ? code : nil
     }
 
     func modelsExistOnDisk() -> Bool {
