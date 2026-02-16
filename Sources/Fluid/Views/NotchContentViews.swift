@@ -131,6 +131,14 @@ class NotchContentState: ObservableObject {
     var onOverlayModeSwitchRequested: ((OverlayMode) -> Void)?
     /// Called when the user requests reprocessing the latest saved dictation entry.
     var onReprocessLastRequested: (() -> Void)?
+    /// Called when the user requests copying the latest saved transcription entry.
+    var onCopyLastRequested: (() -> Void)?
+    /// Called when the user requests undoing AI processing for the latest entry.
+    var onUndoLastAIRequested: (() -> Void)?
+    /// Called when the user requests toggling dictation AI enhancement.
+    var onToggleAIProcessingRequested: (() -> Void)?
+    /// Called when the user requests opening Preferences.
+    var onOpenPreferencesRequested: (() -> Void)?
 
     /// Set recording state (for waveform visibility in expanded view)
     func setRecordingInExpandedMode(_ recording: Bool) {

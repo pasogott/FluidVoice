@@ -600,6 +600,10 @@ struct ContentView: View {
             NotchContentState.shared.onPromptModeSwitchRequested = nil
             NotchContentState.shared.onOverlayModeSwitchRequested = nil
             NotchContentState.shared.onReprocessLastRequested = nil
+            NotchContentState.shared.onCopyLastRequested = nil
+            NotchContentState.shared.onUndoLastAIRequested = nil
+            NotchContentState.shared.onToggleAIProcessingRequested = nil
+            NotchContentState.shared.onOpenPreferencesRequested = nil
             Task { await self.asr.stopWithoutTranscription() }
             // Note: Overlay lifecycle is now managed by MenuBarManager
 
@@ -1741,6 +1745,84 @@ struct ContentView: View {
         }
     }
 
+    private func copyLastDictationFromHistory() {
+        guard let last = TranscriptionHistoryStore.shared.entries.first else {
+            DebugLogger.shared.info("Actions: Copy requested but history is empty", source: "ContentView")
+            return
+        }
+
+        let text = last.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            DebugLogger.shared.info("Actions: Copy skipped because latest history processed text is empty", source: "ContentView")
+            return
+        }
+
+        _ = ClipboardService.copyToClipboard(text)
+        DebugLogger.shared.info("Actions: Copied latest transcription to clipboard", source: "ContentView")
+    }
+
+    private func undoLastAIProcessingFromHistory() {
+        guard let last = TranscriptionHistoryStore.shared.entries.first else {
+            DebugLogger.shared.info("Actions: Undo AI requested but history is empty", source: "ContentView")
+            return
+        }
+
+        let rawText = last.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !rawText.isEmpty else {
+            DebugLogger.shared.info("Actions: Undo AI skipped because latest history raw text is empty", source: "ContentView")
+            return
+        }
+
+        guard last.wasAIProcessed else {
+            DebugLogger.shared.info("Actions: Undo AI skipped because latest entry was not AI processed", source: "ContentView")
+            return
+        }
+
+        DebugLogger.shared.info("Actions: Restoring latest transcription raw text (undo AI)", source: "ContentView")
+        Task { @MainActor in
+            await self.applyHistoryTextOutput(rawText, saveToHistory: true)
+        }
+    }
+
+    private func applyHistoryTextOutput(_ text: String, saveToHistory: Bool) async {
+        // Keep hotkey/recording state deterministic before applying output text.
+        if self.asr.isRunning {
+            DebugLogger.shared.info("Actions: stopping active recording before history action output", source: "ContentView")
+            await self.asr.stopWithoutTranscription()
+        }
+
+        let finalText = ASRService.applyGAAVFormatting(text)
+        let appInfo = self.getCurrentAppInfo()
+
+        if saveToHistory, SettingsStore.shared.saveTranscriptionHistory {
+            TranscriptionHistoryStore.shared.addEntry(
+                rawText: text,
+                processedText: finalText,
+                appName: appInfo.name,
+                windowTitle: appInfo.windowTitle
+            )
+        }
+
+        if SettingsStore.shared.copyTranscriptionToClipboard {
+            ClipboardService.copyToClipboard(finalText)
+        }
+
+        let focusedPID = TypingService.captureSystemFocusedPID()
+            ?? NSWorkspace.shared.frontmostApplication?.processIdentifier
+        NotchContentState.shared.recordingTargetPID = focusedPID
+
+        let frontmostApp = NSWorkspace.shared.frontmostApplication
+        let isFluidFrontmost = frontmostApp?.bundleIdentifier?.contains("fluid") == true
+        let shouldTypeExternally = !isFluidFrontmost || self.isTranscriptionFocused == false
+        if shouldTypeExternally {
+            await self.restoreFocusToRecordingTarget()
+            self.asr.typeTextToActiveField(
+                finalText,
+                preferredTargetPID: NotchContentState.shared.recordingTargetPID
+            )
+        }
+    }
+
     private func reprocessDictationText(_ transcribedText: String) async {
         // If live recording is still active, stop it first so reprocess does not
         // leave ASR running in the background (which causes the next hotkey press
@@ -2190,6 +2272,18 @@ struct ContentView: View {
         }
         NotchContentState.shared.onReprocessLastRequested = {
             self.reprocessLastDictationFromHistory()
+        }
+        NotchContentState.shared.onCopyLastRequested = {
+            self.copyLastDictationFromHistory()
+        }
+        NotchContentState.shared.onUndoLastAIRequested = {
+            self.undoLastAIProcessingFromHistory()
+        }
+        NotchContentState.shared.onToggleAIProcessingRequested = {
+            _ = self.menuBarManager.toggleAIProcessingEnabled()
+        }
+        NotchContentState.shared.onOpenPreferencesRequested = {
+            self.menuBarManager.openPreferencesFromUI()
         }
 
         guard self.hotkeyManager == nil else { return }

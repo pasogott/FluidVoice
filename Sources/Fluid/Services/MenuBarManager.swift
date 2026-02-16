@@ -387,12 +387,29 @@ final class MenuBarManager: ObservableObject {
         self.aiMenuItem?.title = aiTitle
     }
 
-    @objc private func toggleAIProcessing() {
-        self.aiProcessingEnabled.toggle()
-        // Persist and broadcast change
-        SettingsStore.shared.enableAIProcessing = self.aiProcessingEnabled
-        // If a ContentView has bound to MenuBarManager, its onChange sync will mirror this
+    /// Centralized entry point to update AI post-processing enablement.
+    /// Use this instead of writing `aiProcessingEnabled` directly so all state stays in sync.
+    func setAIProcessingEnabled(_ enabled: Bool) {
+        guard self.aiProcessingEnabled != enabled else {
+            // Ensure menu text stays correct even if caller repeats the same value.
+            self.updateMenu()
+            return
+        }
+        self.aiProcessingEnabled = enabled
+        SettingsStore.shared.enableAIProcessing = enabled
         self.updateMenu()
+    }
+
+    /// Toggle AI post-processing and return the new value.
+    @discardableResult
+    func toggleAIProcessingEnabled() -> Bool {
+        let next = !self.aiProcessingEnabled
+        self.setAIProcessingEnabled(next)
+        return next
+    }
+
+    @objc private func toggleAIProcessing() {
+        _ = self.toggleAIProcessingEnabled()
     }
 
     @objc private func checkForUpdates(_ sender: Any?) {
@@ -484,6 +501,11 @@ final class MenuBarManager: ObservableObject {
             self?.requestedNavigationDestination = nil
             self?.requestedNavigationDestination = .preferences
         }
+    }
+
+    /// Public entry-point for non-menu UI surfaces (e.g. overlay controls) to open Preferences.
+    func openPreferencesFromUI() {
+        self.openPreferences()
     }
 
     /// Create and present a fresh main window hosting `ContentView`

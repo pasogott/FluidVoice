@@ -1336,6 +1336,23 @@ private struct BottomOverlayActionsMenuView: View {
         !self.historyStore.entries.isEmpty && !self.contentState.isProcessing
     }
 
+    private var latestEntry: TranscriptionHistoryEntry? {
+        self.historyStore.entries.first
+    }
+
+    private var canCopyLast: Bool {
+        guard !self.contentState.isProcessing else { return false }
+        guard let latest = self.latestEntry else { return false }
+        return !latest.processedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var canUndoLastAI: Bool {
+        guard !self.contentState.isProcessing else { return false }
+        guard let latest = self.latestEntry else { return false }
+        let raw = latest.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return latest.wasAIProcessed && !raw.isEmpty
+    }
+
     private func rowBackground(isSelected: Bool, rowID: String) -> some View {
         let isHovered = self.hoveredRowID == rowID
         let fillColor: Color
@@ -1364,32 +1381,73 @@ private struct BottomOverlayActionsMenuView: View {
             )
     }
 
-    var body: some View {
+    @ViewBuilder
+    private func actionRow(
+        title: String,
+        icon: String,
+        rowID: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
         Button(action: {
-            guard self.canReprocessLast else { return }
-            self.contentState.onReprocessLastRequested?()
+            guard enabled else { return }
+            action()
             self.onDismissRequested()
         }) {
             HStack(spacing: 8) {
-                Text("Reprocess Last Dictation")
+                Text(title)
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Image(systemName: "arrow.clockwise")
+                Image(systemName: icon)
                     .font(.system(size: 11, weight: .semibold))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(self.rowBackground(isSelected: false, rowID: "reprocess_last"))
+            .background(self.rowBackground(isSelected: false, rowID: rowID))
         }
         .buttonStyle(.plain)
-        .disabled(!self.canReprocessLast)
-        .opacity(self.canReprocessLast ? 1 : 0.45)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
         .onHover { hovering in
-            guard self.canReprocessLast else {
+            guard enabled else {
                 self.hoveredRowID = nil
                 return
             }
-            self.hoveredRowID = hovering ? "reprocess_last" : nil
+            self.hoveredRowID = hovering ? rowID : nil
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            self.actionRow(
+                title: "Reprocess Last Dictation",
+                icon: "arrow.clockwise",
+                rowID: "reprocess_last",
+                enabled: self.canReprocessLast
+            ) {
+                self.contentState.onReprocessLastRequested?()
+            }
+
+            self.actionRow(
+                title: "Copy Last Transcription",
+                icon: "doc.on.doc",
+                rowID: "copy_last",
+                enabled: self.canCopyLast
+            ) {
+                self.contentState.onCopyLastRequested?()
+            }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            self.actionRow(
+                title: "Undo AI on Last",
+                icon: "arrow.uturn.backward",
+                rowID: "undo_ai_last",
+                enabled: self.canUndoLastAI
+            ) {
+                self.contentState.onUndoLastAIRequested?()
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1511,7 +1569,9 @@ struct BottomOverlayView: View {
     @Environment(\.theme) private var theme
     @State private var isHoveringModeChip = false
     @State private var isHoveringPromptChip = false
+    @State private var isHoveringAIToggleChip = false
     @State private var isHoveringActionsChip = false
+    @State private var isHoveringSettingsChip = false
     @State private var modeSelectorFrameInScreen: CGRect = .zero
     @State private var modeSelectorWindow: NSWindow?
     @State private var promptSelectorFrameInScreen: CGRect = .zero
@@ -1990,6 +2050,44 @@ struct BottomOverlayView: View {
         )
     }
 
+    private var aiToggleChip: some View {
+        let disabled = self.contentState.isProcessing
+        let isEnabled = self.settings.enableAIProcessing
+        return HStack(spacing: 5) {
+            Text("AI:")
+                .font(.system(size: self.promptSelectorFontSize, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+            Text(isEnabled ? "On" : "Off")
+                .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
+                .foregroundStyle(isEnabled ? .white.opacity(0.82) : .white.opacity(0.7))
+                .lineLimit(1)
+            Image(systemName: isEnabled ? "brain.fill" : "brain")
+                .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
+                .foregroundStyle(isEnabled ? .white.opacity(0.65) : .white.opacity(0.45))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, self.promptSelectorVerticalPadding)
+        .background(
+            self.chipBackground(
+                isHovered: self.isHoveringAIToggleChip,
+                disabled: disabled
+            )
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            self.isHoveringAIToggleChip = hovering && !disabled
+        }
+        .onTapGesture {
+            guard !disabled else { return }
+            self.closePromptMenu()
+            self.closeModeMenu()
+            self.closeActionsMenu()
+            self.contentState.onToggleAIProcessingRequested?()
+        }
+        .help("Toggle AI enhancement for dictation")
+        .opacity(disabled ? 0.65 : 1)
+    }
+
     private var actionsSelectorView: some View {
         let actionsDisabled = self.historyStore.entries.isEmpty || self.contentState.isProcessing
         return self.actionsSelectorTrigger
@@ -2023,15 +2121,46 @@ struct BottomOverlayView: View {
             )
     }
 
+    private var settingsChip: some View {
+        let disabled = false
+        return HStack(spacing: 0) {
+            Image(systemName: "gearshape")
+                .font(.system(size: max(self.promptSelectorFontSize + 1, 10), weight: .semibold))
+                .foregroundStyle(.white.opacity(0.72))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, self.promptSelectorVerticalPadding)
+        .background(
+            self.chipBackground(
+                isHovered: self.isHoveringSettingsChip,
+                disabled: disabled
+            )
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            self.isHoveringSettingsChip = hovering
+        }
+        .onTapGesture {
+            self.closePromptMenu()
+            self.closeModeMenu()
+            self.closeActionsMenu()
+            self.contentState.onOpenPreferencesRequested?()
+        }
+        .help("Open Preferences")
+    }
+
     var body: some View {
         VStack(spacing: max(4, self.layout.vPadding / 2)) {
             if self.layout.showsTopControls {
                 HStack(spacing: 8) {
                     self.modeSelectorView
                     self.promptSelectorView
+                    Spacer(minLength: 6)
+                    self.aiToggleChip
                     self.actionsSelectorView
+                    self.settingsChip
                 }
-                .frame(maxWidth: .infinity, alignment: .center)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, self.layout.hPadding)
             }
 
@@ -2241,7 +2370,9 @@ struct BottomOverlayView: View {
             self.closeActionsMenu()
             self.isHoveringModeChip = false
             self.isHoveringPromptChip = false
+            self.isHoveringAIToggleChip = false
             self.isHoveringActionsChip = false
+            self.isHoveringSettingsChip = false
             switch self.contentState.mode {
             case .dictation: self.contentState.promptPickerMode = .dictate
             case .edit, .write, .rewrite: self.contentState.promptPickerMode = .edit
@@ -2259,7 +2390,9 @@ struct BottomOverlayView: View {
             }
             self.isHoveringModeChip = false
             self.isHoveringPromptChip = false
+            self.isHoveringAIToggleChip = false
             self.isHoveringActionsChip = false
+            self.isHoveringSettingsChip = false
             if !self.layout.usesFixedCanvas {
                 BottomOverlayWindowController.shared.refreshSizeForContent()
             }
@@ -2270,7 +2403,9 @@ struct BottomOverlayView: View {
             self.closeActionsMenu()
             self.isHoveringModeChip = false
             self.isHoveringPromptChip = false
+            self.isHoveringAIToggleChip = false
             self.isHoveringActionsChip = false
+            self.isHoveringSettingsChip = false
         }
         // TODO: Add tap-to-expand for command mode history (future enhancement)
         // .contentShape(Rectangle())

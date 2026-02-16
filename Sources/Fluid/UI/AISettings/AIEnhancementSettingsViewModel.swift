@@ -15,8 +15,9 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     @Published var enableAIProcessing: Bool {
         didSet {
             guard self.enableAIProcessing != oldValue else { return }
-            self.settings.enableAIProcessing = self.enableAIProcessing
-            self.menuBarManager.aiProcessingEnabled = self.enableAIProcessing
+            // Route through MenuBarManager so all UI surfaces (menu, settings, future overlay)
+            // share one callable code path.
+            self.menuBarManager.setAIProcessingEnabled(self.enableAIProcessing)
         }
     }
 
