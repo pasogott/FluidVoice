@@ -1754,9 +1754,13 @@ struct ContentView: View {
             return
         }
 
-        let text = last.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Fallback to raw text when no processed text is available
+        // (for example older entries or edge cases with AI enhancement off).
+        let processed = last.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = last.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = processed.isEmpty ? raw : processed
         guard !text.isEmpty else {
-            DebugLogger.shared.info("Actions: Copy skipped because latest history processed text is empty", source: "ContentView")
+            DebugLogger.shared.info("Actions: Copy skipped because latest history text is empty", source: "ContentView")
             return
         }
 

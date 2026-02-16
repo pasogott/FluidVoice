@@ -1343,7 +1343,9 @@ private struct BottomOverlayActionsMenuView: View {
     private var canCopyLast: Bool {
         guard !self.contentState.isProcessing else { return false }
         guard let latest = self.latestEntry else { return false }
-        return !latest.processedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let processed = latest.processedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let raw = latest.rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !(processed.isEmpty && raw.isEmpty)
     }
 
     private var canUndoLastAI: Bool {
