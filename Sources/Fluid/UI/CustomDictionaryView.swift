@@ -658,6 +658,12 @@ struct AddBoostTermSheet: View {
         .padding(20)
         .frame(minWidth: 420, idealWidth: 460, maxWidth: 520)
         .frame(minHeight: 420, idealHeight: 500, maxHeight: 640)
+        .onAppear {
+            // Always start new entries at the recommended default.
+            self.termText = ""
+            self.aliasesText = ""
+            self.strength = .balanced
+        }
     }
 
     private func parseAliases() -> [String] {

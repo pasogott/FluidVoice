@@ -270,7 +270,7 @@ final class ParakeetVocabularyStore {
             {
               "text": "FluidVoice",
               "aliases": ["fluid voice", "fluid boys"],
-              "weight": 12.0
+              "weight": 10.0
             }
           ]
         }
