@@ -560,104 +560,104 @@ struct AddBoostTermSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Add Custom Word")
-                    .font(.headline)
-                Spacer()
-                Button("Cancel") { self.dismiss() }
-                    .buttonStyle(.bordered)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Preferred Word or Phrase")
-                    .font(.subheadline.weight(.medium))
-                TextField("FluidVoice", text: self.$termText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { self.saveIfValid() }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Common Variations (optional)")
-                .font(.subheadline.weight(.medium))
-                Text("Comma-separated forms that are often misheard.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("fluid voice, fluid boys", text: self.$aliasesText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { self.saveIfValid() }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Word Priority")
-                    .font(.subheadline.weight(.medium))
-                Picker("Word Priority", selection: self.$strength) {
-                    ForEach(BoostStrengthPreset.allCases) { preset in
-                        Text(preset.rawValue).tag(preset)
-                    }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Add Custom Word")
+                        .font(.headline)
+                    Spacer()
+                    Button("Cancel") { self.dismiss() }
+                        .buttonStyle(.bordered)
                 }
-                .pickerStyle(.segmented)
-                Text(self.strength.hint)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
 
-            if self.isDuplicate {
-                Text("This term already exists.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
+                Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Preview")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                FlowLayout(spacing: 6) {
-                    Text(self.normalizedTerm.isEmpty ? "term" : self.normalizedTerm)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(self.theme.palette.accent)
-                    Text("\(self.strength.rawValue) priority")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(.quaternary))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preferred Word or Phrase")
+                        .font(.subheadline.weight(.medium))
+                    TextField("FluidVoice", text: self.$termText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { self.saveIfValid() }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Common Variations (optional)")
+                    .font(.subheadline.weight(.medium))
+                    Text("Comma-separated forms that are often misheard.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    ForEach(self.parseAliases(), id: \.self) { alias in
-                        Text(alias)
-                            .font(.caption)
+                    TextField("fluid voice, fluid boys", text: self.$aliasesText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { self.saveIfValid() }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Word Priority")
+                        .font(.subheadline.weight(.medium))
+                    Picker("Word Priority", selection: self.$strength) {
+                        ForEach(BoostStrengthPreset.allCases) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(self.strength.hint)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if self.isDuplicate {
+                    Text("This term already exists.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Preview")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    FlowLayout(spacing: 6) {
+                        Text(self.normalizedTerm.isEmpty ? "term" : self.normalizedTerm)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(self.theme.palette.accent)
+                        Text("\(self.strength.rawValue) priority")
+                            .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+                            .background(Capsule().fill(.quaternary))
+                            .foregroundStyle(.secondary)
+                        ForEach(self.parseAliases(), id: \.self) { alias in
+                            Text(alias)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+                        }
                     }
                 }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(self.theme.palette.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
-                    )
-            )
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(self.theme.palette.cardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
+                        )
+                )
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Add Word") { self.saveIfValid() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(self.theme.palette.accent)
-                    .disabled(!self.canSave)
-                    .keyboardShortcut(.return, modifiers: [])
+                HStack {
+                    Spacer()
+                    Button("Add Word") { self.saveIfValid() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(self.theme.palette.accent)
+                        .disabled(!self.canSave)
+                        .keyboardShortcut(.return, modifiers: [])
+                }
             }
         }
         .padding(20)
         .frame(minWidth: 420, idealWidth: 460, maxWidth: 520)
-        .frame(minHeight: 320, idealHeight: 360, maxHeight: 420)
+        .frame(minHeight: 420, idealHeight: 500, maxHeight: 640)
     }
 
     private func parseAliases() -> [String] {
@@ -707,104 +707,104 @@ struct EditBoostTermSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("Edit Custom Word")
-                    .font(.headline)
-                Spacer()
-                Button("Cancel") { self.dismiss() }
-                    .buttonStyle(.bordered)
-            }
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Preferred Word or Phrase")
-                    .font(.subheadline.weight(.medium))
-                TextField("FluidVoice", text: self.$termText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { self.saveIfValid() }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Common Variations (optional)")
-                    .font(.subheadline.weight(.medium))
-                Text("Comma-separated forms that are often misheard.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                TextField("fluid voice, fluid boys", text: self.$aliasesText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit { self.saveIfValid() }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Word Priority")
-                    .font(.subheadline.weight(.medium))
-                Picker("Word Priority", selection: self.$strength) {
-                    ForEach(BoostStrengthPreset.allCases) { preset in
-                        Text(preset.rawValue).tag(preset)
-                    }
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Edit Custom Word")
+                        .font(.headline)
+                    Spacer()
+                    Button("Cancel") { self.dismiss() }
+                        .buttonStyle(.bordered)
                 }
-                .pickerStyle(.segmented)
-                Text(self.strength.hint)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
 
-            if self.isDuplicate {
-                Text("This term already exists.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
+                Divider()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Preview")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                FlowLayout(spacing: 6) {
-                    Text(self.normalizedTerm.isEmpty ? "term" : self.normalizedTerm)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(self.theme.palette.accent)
-                    Text("\(self.strength.rawValue) priority")
-                        .font(.caption2.weight(.semibold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(.quaternary))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preferred Word or Phrase")
+                        .font(.subheadline.weight(.medium))
+                    TextField("FluidVoice", text: self.$termText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { self.saveIfValid() }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Common Variations (optional)")
+                        .font(.subheadline.weight(.medium))
+                    Text("Comma-separated forms that are often misheard.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
-                    ForEach(self.parseAliases(), id: \.self) { alias in
-                        Text(alias)
-                            .font(.caption)
+                    TextField("fluid voice, fluid boys", text: self.$aliasesText)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit { self.saveIfValid() }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Word Priority")
+                        .font(.subheadline.weight(.medium))
+                    Picker("Word Priority", selection: self.$strength) {
+                        ForEach(BoostStrengthPreset.allCases) { preset in
+                            Text(preset.rawValue).tag(preset)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text(self.strength.hint)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                if self.isDuplicate {
+                    Text("This term already exists.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Preview")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    FlowLayout(spacing: 6) {
+                        Text(self.normalizedTerm.isEmpty ? "term" : self.normalizedTerm)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(self.theme.palette.accent)
+                        Text("\(self.strength.rawValue) priority")
+                            .font(.caption2.weight(.semibold))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+                            .background(Capsule().fill(.quaternary))
+                            .foregroundStyle(.secondary)
+                        ForEach(self.parseAliases(), id: \.self) { alias in
+                            Text(alias)
+                                .font(.caption)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(RoundedRectangle(cornerRadius: 4).fill(.quaternary))
+                        }
                     }
                 }
-            }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(self.theme.palette.cardBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
-                    )
-            )
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(self.theme.palette.cardBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
+                        )
+                )
 
-            Spacer()
-
-            HStack {
-                Spacer()
-                Button("Save Changes") { self.saveIfValid() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(self.theme.palette.accent)
-                    .disabled(!self.canSave)
-                    .keyboardShortcut(.return, modifiers: [])
+                HStack {
+                    Spacer()
+                    Button("Save Changes") { self.saveIfValid() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(self.theme.palette.accent)
+                        .disabled(!self.canSave)
+                        .keyboardShortcut(.return, modifiers: [])
+                }
             }
         }
         .padding(20)
         .frame(minWidth: 420, idealWidth: 460, maxWidth: 520)
-        .frame(minHeight: 320, idealHeight: 360, maxHeight: 420)
+        .frame(minHeight: 420, idealHeight: 500, maxHeight: 640)
         .onAppear {
             self.termText = self.term.text
             self.aliasesText = (self.term.aliases ?? []).joined(separator: ", ")
