@@ -101,6 +101,7 @@ final class ASRService: ObservableObject {
     @Published var isRunning: Bool = false
     @Published var finalText: String = ""
     @Published var partialTranscription: String = ""
+    @Published var wordBoostStatusText: String = "Word boost: off"
     @Published var micStatus: AVAuthorizationStatus = .notDetermined
     @Published var isAsrReady: Bool = false
     @Published var isDownloadingModel: Bool = false
@@ -112,6 +113,7 @@ final class ASRService: ObservableObject {
     private var isStarting: Bool = false // Guard against re-entrant start() calls
     private var downloadProgressTask: Task<Void, Never>?
     private var hasCompletedFirstTranscription: Bool = false // Track if model has warmed up with first transcription
+    private var lastBoostHitTerm: String?
     private let downloadRegistry = ModelDownloadRegistry()
     private var vocabularyChangeObserver: NSObjectProtocol?
 
@@ -316,6 +318,8 @@ final class ASRService: ObservableObject {
         self.ensureReadyTask?.cancel()
         self.ensureReadyTask = nil
         self.ensureReadyProviderKey = nil
+        self.lastBoostHitTerm = nil
+        self.wordBoostStatusText = "Word boost: off"
 
         // Reset cached providers to force re-initialization with new settings
         self.fluidAudioProvider = nil
@@ -330,6 +334,9 @@ final class ASRService: ObservableObject {
         Task { [weak self] in
             guard let self = self else { return }
             await self.checkIfModelsExistAsync()
+            await MainActor.run {
+                self.refreshWordBoostStatus()
+            }
             DebugLogger.shared.info("ASRService: Provider reset complete, will initialize '\(newModel.displayName)' on next use", source: "ASRService")
         }
     }
@@ -419,7 +426,9 @@ final class ASRService: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.handleParakeetVocabularyDidChange()
+            Task { @MainActor [weak self] in
+                self?.handleParakeetVocabularyDidChange()
+            }
         }
     }
 
@@ -441,6 +450,44 @@ final class ASRService: ObservableObject {
             return
         }
         self.resetTranscriptionProvider()
+    }
+
+    private func refreshWordBoostStatus() {
+        let model = SettingsStore.shared.selectedSpeechModel
+        guard model == .parakeetTDT || model == .parakeetTDTv2,
+              let provider = self.fluidAudioProvider,
+              provider.isReady
+        else {
+            self.wordBoostStatusText = "Word boost: off"
+            return
+        }
+
+        if provider.isWordBoostingActive {
+            let count = provider.boostedVocabularyTermsCount
+            if let lastHit = self.lastBoostHitTerm, !lastHit.isEmpty {
+                self.wordBoostStatusText = "Word boost: ON (\(count) terms) • last hit: \(lastHit)"
+            } else {
+                self.wordBoostStatusText = "Word boost: ON (\(count) terms) • no hit yet"
+            }
+        } else {
+            self.wordBoostStatusText = "Word boost: ON (0 terms loaded)"
+        }
+    }
+
+    private func recordWordBoostHitIfAny(transcribedText: String) {
+        let model = SettingsStore.shared.selectedSpeechModel
+        guard model == .parakeetTDT || model == .parakeetTDTv2,
+              let provider = self.fluidAudioProvider,
+              provider.isWordBoostingActive
+        else { return }
+
+        let hits = provider.detectBoostedTerms(in: transcribedText, limit: 1)
+        guard let hit = hits.first else { return }
+        if hit != self.lastBoostHitTerm {
+            self.lastBoostHitTerm = hit
+            DebugLogger.shared.info("BOOST_HIT: '\(hit)'", source: "ASRService")
+        }
+        self.refreshWordBoostStatus()
     }
 
     /// Call this AFTER the app has finished launching to complete ASR initialization.
@@ -565,10 +612,12 @@ final class ASRService: ObservableObject {
         self.audioBuffer.clear(keepingCapacity: true) // specific optimization for restart
         self.partialTranscription.removeAll()
         self.previousFullTranscription.removeAll()
+        self.lastBoostHitTerm = nil
         self.lastProcessedSampleCount = 0
         self.isProcessingChunk = false
         self.skipNextChunk = false
         self.audioCapturePipeline.setRecordingEnabled(true)
+        self.refreshWordBoostStatus()
         DebugLogger.shared.debug("✅ Buffers cleared", source: "ASRService")
 
         self.isStarting = true
@@ -794,6 +843,7 @@ final class ASRService: ObservableObject {
 
             // Do not update self.finalText here to avoid instant binding insert in playground
             let cleanedText = ASRService.applyCustomDictionary(ASRService.removeFillerWords(result.text))
+            self.recordWordBoostHitIfAny(transcribedText: cleanedText)
             DebugLogger.shared.debug("After post-processing: '\(cleanedText)'", source: "ASRService")
 
             // Resume media playback if we paused it
@@ -874,9 +924,11 @@ final class ASRService: ObservableObject {
         self.audioBuffer.clear()
         self.partialTranscription.removeAll()
         self.previousFullTranscription.removeAll()
+        self.lastBoostHitTerm = nil
         self.lastProcessedSampleCount = 0
         self.isProcessingChunk = false
         self.skipNextChunk = false
+        self.refreshWordBoostStatus()
 
         // Resume media playback if we paused it
         if shouldResumeMedia {
@@ -1809,6 +1861,7 @@ final class ASRService: ObservableObject {
         // Check if already ready
         if self.isAsrReady, provider.isReady {
             DebugLogger.shared.debug("ASR already ready with loaded models, skipping initialization", source: "ASRService")
+            self.refreshWordBoostStatus()
             return
         }
 
@@ -1899,6 +1952,7 @@ final class ASRService: ObservableObject {
             DebugLogger.shared.info("Total initialization time: \(String(format: "%.1f", totalDuration)) seconds", source: "ASRService")
 
             self.isAsrReady = true
+            self.refreshWordBoostStatus()
         } catch {
             DebugLogger.shared.error("ASR initialization failed with error: \(error)", source: "ASRService")
             DebugLogger.shared.error("Error details: \(error.localizedDescription)", source: "ASRService")
@@ -2156,6 +2210,7 @@ final class ASRService: ObservableObject {
             )
             let rawText = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
             let newText = ASRService.applyCustomDictionary(ASRService.removeFillerWords(rawText))
+            self.recordWordBoostHitIfAny(transcribedText: newText)
 
             // Mark first transcription as complete to clear loading state
             if !self.hasCompletedFirstTranscription {

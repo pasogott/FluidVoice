@@ -325,6 +325,24 @@ struct WelcomeView: View {
                             }
                         }
 
+                        if self.settings.selectedSpeechModel == .parakeetTDT || self.settings.selectedSpeechModel == .parakeetTDTv2 {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.magnifyingglass")
+                                    .font(.caption)
+                                    .foregroundStyle(self.theme.palette.accent)
+                                Text(self.asr.wordBoostStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(self.theme.palette.contentBackground.opacity(0.6))
+                            )
+                        }
+
                         VStack(alignment: .leading, spacing: 12) {
                             // Recording Control
                             VStack(spacing: 10) {

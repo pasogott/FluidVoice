@@ -18,6 +18,7 @@ final class FluidAudioProvider: TranscriptionProvider {
     private(set) var isReady: Bool = false
     private(set) var isWordBoostingActive: Bool = false
     private(set) var boostedVocabularyTermsCount: Int = 0
+    private var boostedTermLookup: [String] = []
 
     /// Optional model override - if set, uses this model instead of the global setting.
     /// Used for downloading specific models without changing the active selection.
@@ -53,6 +54,7 @@ final class FluidAudioProvider: TranscriptionProvider {
 
         self.isWordBoostingActive = false
         self.boostedVocabularyTermsCount = 0
+        self.boostedTermLookup = []
 
         if self.configureWordBoosting {
             do {
@@ -63,6 +65,7 @@ final class FluidAudioProvider: TranscriptionProvider {
                     )
                     self.isWordBoostingActive = true
                     self.boostedVocabularyTermsCount = vocabBundle.vocabulary.terms.count
+                    self.boostedTermLookup = Self.makeBoostedTermLookup(from: vocabBundle.vocabulary.terms)
                     DebugLogger.shared.info(
                         "FluidAudioProvider: Enabled vocabulary boosting with \(self.boostedVocabularyTermsCount) terms",
                         source: "FluidAudioProvider"
@@ -152,12 +155,62 @@ final class FluidAudioProvider: TranscriptionProvider {
         self.finalAsrManager = nil
         self.isWordBoostingActive = false
         self.boostedVocabularyTermsCount = 0
+        self.boostedTermLookup = []
     }
 
     /// Provides direct access to the underlying AsrManager for advanced use cases
     /// (e.g., MeetingTranscriptionService sharing)
     var underlyingManager: AsrManager? {
         return self.streamingAsrManager
+    }
+
+    func detectBoostedTerms(in text: String, limit: Int = 2) -> [String] {
+        guard self.isWordBoostingActive, !self.boostedTermLookup.isEmpty else { return [] }
+        let normalizedText = " \(Self.normalizeForLookup(text)) "
+        guard normalizedText.count > 2 else { return [] }
+
+        var hits: [String] = []
+        hits.reserveCapacity(min(limit, 2))
+        for candidate in self.boostedTermLookup {
+            if normalizedText.contains(" \(candidate) ") {
+                hits.append(candidate)
+                if hits.count >= limit {
+                    break
+                }
+            }
+        }
+        return hits
+    }
+
+    private static func makeBoostedTermLookup(from terms: [CustomVocabularyTerm]) -> [String] {
+        var unique: Set<String> = []
+        unique.reserveCapacity(terms.count * 2)
+        for term in terms {
+            let normalized = normalizeForLookup(term.text)
+            if !normalized.isEmpty {
+                unique.insert(normalized)
+            }
+            for alias in term.aliases ?? [] {
+                let normalizedAlias = normalizeForLookup(alias)
+                if !normalizedAlias.isEmpty {
+                    unique.insert(normalizedAlias)
+                }
+            }
+        }
+        return unique.sorted { lhs, rhs in
+            if lhs.count == rhs.count {
+                return lhs < rhs
+            }
+            return lhs.count > rhs.count
+        }
+    }
+
+    private static func normalizeForLookup(_ text: String) -> String {
+        let lowercase = text.lowercased()
+        let words = lowercase
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        return words.joined(separator: " ")
     }
 }
 #else
@@ -166,6 +219,8 @@ final class FluidAudioProvider: TranscriptionProvider {
     let name = "FluidAudio (Apple Silicon ONLY)"
     var isAvailable: Bool { false }
     var isReady: Bool { false }
+    private(set) var isWordBoostingActive: Bool = false
+    private(set) var boostedVocabularyTermsCount: Int = 0
 
     init(modelOverride: SettingsStore.SpeechModel? = nil, configureWordBoosting: Bool = true) {
         // Intel stub - parameter ignored
@@ -185,6 +240,10 @@ final class FluidAudioProvider: TranscriptionProvider {
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "FluidAudio is not supported on Intel Macs"]
         )
+    }
+
+    func detectBoostedTerms(in text: String, limit: Int = 2) -> [String] {
+        []
     }
 }
 #endif

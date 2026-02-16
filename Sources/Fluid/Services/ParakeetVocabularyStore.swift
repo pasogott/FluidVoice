@@ -47,11 +47,11 @@ final class ParakeetVocabularyStore {
     }
 
     private enum Defaults {
-        static let alpha: Float = 2.5
-        static let minCtcScore: Float = -2.0
-        static let minSimilarity: Float = 0.72
-        static let minCombinedConfidence: Float = 0.65
-        static let minTermLength: Int = 3
+        static let alpha: Float = 3.2
+        static let minCtcScore: Float = -2.4
+        static let minSimilarity: Float = 0.68
+        static let minCombinedConfidence: Float = 0.58
+        static let minTermLength: Int = 2
         static let maxTerms: Int = 256
     }
 
@@ -191,11 +191,11 @@ final class ParakeetVocabularyStore {
     static func defaultTemplateJSON() -> String {
         """
         {
-          "alpha": 2.5,
-          "minCtcScore": -2.0,
-          "minSimilarity": 0.72,
-          "minCombinedConfidence": 0.65,
-          "minTermLength": 3,
+          "alpha": 3.2,
+          "minCtcScore": -2.4,
+          "minSimilarity": 0.68,
+          "minCombinedConfidence": 0.58,
+          "minTermLength": 2,
           "terms": [
             {
               "text": "FluidVoice",
@@ -221,7 +221,8 @@ extension ParakeetVocabularyStore {
         let resolved = try self.loadResolvedConfig()
         guard !resolved.terms.isEmpty else { return nil }
 
-        let cappedTerms = Array(resolved.terms.prefix(maxTerms))
+        let cappedLimit = min(maxTerms, Defaults.maxTerms)
+        let cappedTerms = Array(resolved.terms.prefix(cappedLimit))
         let ctcModels = try await CtcModels.downloadAndLoad(variant: .ctc110m)
         let ctcTokenizer = try await CtcTokenizer.load(from: CtcModels.defaultCacheDirectory(for: ctcModels.variant))
 
