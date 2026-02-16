@@ -42,6 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Schedule periodic update checks every hour while app is running
         self.schedulePeriodicUpdateChecks()
 
+        // Bring the app to front on initial launch.
+        // Use a few delayed retries because SwiftUI window creation can lag app launch callbacks.
+        self.forceFrontOnLaunch()
+
         // Note: App UI is designed with dark color scheme in mind
         // All gradients and effects are optimized for dark mode
     }
@@ -50,6 +54,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Clean up the update check timer
         self.updateCheckTimer?.invalidate()
         self.updateCheckTimer = nil
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Ensure dock-icon reopen always foregrounds FluidVoice.
+        sender.activate(ignoringOtherApps: true)
+
+        if let mainWindow = sender.windows.first(where: { win in
+            guard win.level == .normal else { return false }
+            guard win.styleMask.contains(.titled) else { return false }
+            return win.title == "FluidVoice" || win.title.contains("FluidVoice")
+        }) {
+            mainWindow.orderFrontRegardless()
+            mainWindow.makeKeyAndOrderFront(nil)
+        }
+
+        return true
+    }
+
+    private func forceFrontOnLaunch() {
+        for delay in [0.0, 0.12, 0.35] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self else { return }
+                self.bringMainWindowToFront()
+            }
+        }
+    }
+
+    private func bringMainWindowToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+
+        if let mainWindow = NSApp.windows.first(where: { win in
+            guard win.level == .normal else { return false }
+            guard win.styleMask.contains(.titled) else { return false }
+            return win.title == "FluidVoice" || win.title.contains("FluidVoice")
+        }) {
+            mainWindow.orderFrontRegardless()
+            mainWindow.makeKeyAndOrderFront(nil)
+        }
     }
 
     // MARK: - Periodic Update Checks

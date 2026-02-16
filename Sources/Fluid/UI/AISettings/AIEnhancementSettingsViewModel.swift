@@ -35,6 +35,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     @Published var showingAddModel: Bool = false
     @Published var newModelName: String = ""
     @Published var isFetchingModels: Bool = false
+    @Published var refreshingProviderID: String? = nil
     @Published var fetchModelsError: String? = nil
 
     // Reasoning Configuration
@@ -917,9 +918,13 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     }
 
     func fetchModelsForCurrentProvider() async {
+        self.refreshingProviderID = self.selectedProviderID
         self.isFetchingModels = true
         self.fetchModelsError = nil
-        defer { self.isFetchingModels = false }
+        defer {
+            self.isFetchingModels = false
+            self.refreshingProviderID = nil
+        }
 
         let baseURL = self.openAIBaseURL
         let key = self.providerKey(for: self.selectedProviderID)
@@ -960,6 +965,81 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
                         self.selectedModelByProvider[key] = self.selectedModel
                         self.settings.selectedModelByProvider = self.selectedModelByProvider
                     }
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.fetchModelsError = error.localizedDescription
+            }
+        }
+    }
+
+    func models(for providerID: String) -> [String] {
+        let key = self.providerKey(for: providerID)
+        if let cached = self.availableModelsByProvider[key], !cached.isEmpty {
+            return cached
+        }
+        if let saved = self.savedProviders.first(where: { $0.id == providerID }), !saved.models.isEmpty {
+            return saved.models
+        }
+        if ModelRepository.shared.isBuiltIn(providerID) {
+            return ModelRepository.shared.defaultModels(for: providerID)
+        }
+        return []
+    }
+
+    func fetchModels(for providerID: String) async {
+        let baseURL = self.providerBaseURL(for: providerID)
+        let key = self.providerKey(for: providerID)
+        let apiKey = self.providerAPIKeys[key] ?? self.providerAPIKeys[providerID]
+
+        self.refreshingProviderID = providerID
+        self.isFetchingModels = true
+        self.fetchModelsError = nil
+        defer {
+            self.isFetchingModels = false
+            self.refreshingProviderID = nil
+        }
+
+        do {
+            let models = try await ModelRepository.shared.fetchModels(
+                for: providerID,
+                baseURL: baseURL,
+                apiKey: apiKey
+            )
+
+            await MainActor.run {
+                guard !models.isEmpty else {
+                    self.fetchModelsError = "No models returned from API"
+                    return
+                }
+
+                self.availableModelsByProvider[key] = models
+                self.settings.availableModelsByProvider = self.availableModelsByProvider
+                self.fetchedModelsProviders.insert(key)
+
+                if providerID == self.selectedProviderID {
+                    self.availableModels = models
+                    if !models.contains(self.selectedModel) {
+                        self.selectedModel = models.first ?? ""
+                    }
+                }
+
+                let selectedForProvider = self.selectedModelByProvider[key] ?? ""
+                if !models.contains(selectedForProvider), let first = models.first {
+                    self.selectedModelByProvider[key] = first
+                    self.settings.selectedModelByProvider = self.selectedModelByProvider
+                }
+
+                if let providerIndex = self.savedProviders.firstIndex(where: { $0.id == providerID }) {
+                    let updatedProvider = SettingsStore.SavedProvider(
+                        id: self.savedProviders[providerIndex].id,
+                        name: self.savedProviders[providerIndex].name,
+                        baseURL: self.savedProviders[providerIndex].baseURL,
+                        models: models
+                    )
+                    self.savedProviders[providerIndex] = updatedProvider
+                    self.saveSavedProviders()
                 }
             }
         } catch {
@@ -1210,7 +1290,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
 
     func openEditor(for profile: SettingsStore.DictationPromptProfile) {
         self.draftPromptMode = profile.mode.normalized
-        self.draftIncludeContext = profile.includeContext
+        self.draftIncludeContext = (self.draftPromptMode == .edit) ? true : profile.includeContext
         self.draftPromptName = profile.name
         self.draftPromptText = SettingsStore.stripBasePrompt(for: self.draftPromptMode, from: profile.prompt)
         self.promptEditorSessionID = UUID()
@@ -1237,6 +1317,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
 
         let name = self.draftPromptName.trimmingCharacters(in: .whitespacesAndNewlines)
         let promptBody = SettingsStore.stripBasePrompt(for: self.draftPromptMode, from: self.draftPromptText)
+        let includeContext = (self.draftPromptMode.normalized == .edit) ? true : self.draftIncludeContext
 
         var profiles = self.settings.dictationPromptProfiles
         let now = Date()
@@ -1249,7 +1330,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
             updated.name = name
             updated.prompt = promptBody
             updated.mode = self.draftPromptMode.normalized
-            updated.includeContext = self.draftIncludeContext
+            updated.includeContext = includeContext
             updated.updatedAt = now
             profiles[idx] = updated
 
@@ -1263,7 +1344,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
                 name: name,
                 prompt: promptBody,
                 mode: self.draftPromptMode.normalized,
-                includeContext: self.draftIncludeContext,
+                includeContext: includeContext,
                 createdAt: now,
                 updatedAt: now
             )

@@ -16,14 +16,16 @@ extension AIEnhancementSettingsView {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text("Prompt Profiles")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(self.theme.palette.primaryText)
-                            Text("Choose the active prompt for each mode.")
+                            Text(" - Pick one prompt for Dictate and one for Edit Text.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(self.theme.palette.secondaryText)
                         }
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         Spacer()
                         Button("+ Add Prompt") {
                             self.viewModel.openNewPromptEditor(prefillMode: .edit)
@@ -32,8 +34,19 @@ extension AIEnhancementSettingsView {
                         .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
                     }
 
-                    ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
-                        self.promptModeSection(mode: mode)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
+                                self.promptModeSection(mode: mode)
+                                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                            }
+                        }
+
+                        VStack(spacing: 14) {
+                            ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
+                                self.promptModeSection(mode: mode)
+                            }
+                        }
                     }
                 }
                 .padding(.horizontal, 4)
@@ -46,10 +59,10 @@ extension AIEnhancementSettingsView {
     }
 
     func promptProfileCard(
+        cardKey: String,
         title: String,
         subtitle: String,
         mode: SettingsStore.PromptMode,
-        contextState: Bool? = nil,
         isSelected: Bool,
         onUse: @escaping () -> Void,
         onManage: @escaping () -> Void,
@@ -57,40 +70,30 @@ extension AIEnhancementSettingsView {
         canResetDefault: Bool = false,
         onDelete: (() -> Void)? = nil
     ) -> some View {
-        HStack(alignment: .center, spacing: 10) {
+        let tone = self.modeAccentColor(mode)
+        let selectedStrokeOpacity: Double = mode.normalized == .dictate ? 0.52 : 0.38
+        let isHovering = self.hoveredPromptCardKey == cardKey
+        return HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(isHovering ? tone.opacity(0.5) : .clear)
+                .frame(width: 3, height: 34)
+
             Button(action: onUse) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 8) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(title)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(self.theme.palette.primaryText)
-                        Text(mode.displayName)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(self.theme.palette.cardBorder.opacity(0.3))
-                            )
-                            .foregroundStyle(self.theme.palette.secondaryText)
-                        if let contextState {
-                            Text(contextState ? "Context: On" : "Context: Off")
+                        if mode.normalized == .edit {
+                            Text("Context: Auto")
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(contextState ? self.theme.palette.accent.opacity(0.12) : self.theme.palette.cardBorder.opacity(0.28))
+                                        .fill(tone.opacity(0.12))
                                 )
-                                .foregroundStyle(contextState ? self.theme.palette.accent : self.theme.palette.secondaryText)
-                        }
-                        if isSelected {
-                            Text("Active")
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.fluidGreen.opacity(0.18)))
-                                .foregroundStyle(Color.fluidGreen)
+                                .foregroundStyle(tone)
                         }
                     }
                     Text(subtitle)
@@ -110,14 +113,14 @@ extension AIEnhancementSettingsView {
             HStack(spacing: 10) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(isSelected ? self.theme.palette.accent : self.theme.palette.secondaryText.opacity(0.35))
+                    .foregroundStyle(isSelected ? tone : self.theme.palette.secondaryText.opacity(0.35))
                     .frame(width: 18, height: 18)
 
                     Menu {
                         Button("Edit Prompt") { onManage() }
                         if mode == .edit {
                             Divider()
-                            Text("Context template is applied when enabled and selected text exists.")
+                            Text("Selected text context is added automatically when text is selected.")
                         }
                         if let onDelete {
                             Divider()
@@ -144,32 +147,58 @@ extension AIEnhancementSettingsView {
                 .fill(self.theme.palette.cardBackground.opacity(0.64))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isSelected ? self.theme.palette.accent.opacity(0.42) : self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
+                        .fill(isHovering ? tone.opacity(mode.normalized == .dictate ? 0.06 : 0.045) : .clear)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(isHovering ? tone.opacity(selectedStrokeOpacity) : self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
                 )
         )
+        .onHover { hovering in
+            if hovering {
+                self.hoveredPromptCardKey = cardKey
+            } else if self.hoveredPromptCardKey == cardKey {
+                self.hoveredPromptCardKey = nil
+            }
+        }
+        .animation(.easeOut(duration: 0.1), value: isHovering)
     }
 
     @ViewBuilder
     private func promptModeSection(mode: SettingsStore.PromptMode) -> some View {
         let customProfiles = self.viewModel.dictationPromptProfiles
             .filter { $0.mode.normalized == mode }
+        let tone = self.modeAccentColor(mode)
 
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(mode.displayName) Prompts")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(self.theme.palette.secondaryText)
-                .textCase(.uppercase)
-                .padding(.horizontal, 2)
-            Text(self.promptSectionDescription(for: mode))
-                .font(.caption)
-                .foregroundStyle(self.theme.palette.secondaryText)
-                .padding(.horizontal, 2)
+            HStack(spacing: 8) {
+                Image(systemName: self.modeSymbol(mode))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(tone.opacity(mode.normalized == .dictate ? 0.85 : 0.65)))
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(mode.normalized == .dictate ? "Dictate Mode" : "Edit Text Mode")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(self.theme.palette.primaryText)
+                    Text(" - \(self.promptSectionDescription(for: mode))")
+                        .font(.caption)
+                        .foregroundStyle(self.theme.palette.secondaryText)
+                }
+                .lineLimit(1)
+                .truncationMode(.tail)
+            }
+            .padding(.horizontal, 2)
+
+            if mode.normalized == .edit {
+                self.editModeProviderModelRow
+            }
 
             self.promptProfileCard(
-                title: "Default \(mode.displayName)",
+                cardKey: "\(mode.normalized.rawValue)-default",
+                title: "Default \(self.friendlyModeName(mode))",
                 subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: mode)),
                 mode: mode,
-                contextState: mode == .edit ? true : nil,
                 isSelected: self.viewModel.selectedPromptID(for: mode) == nil,
                 onUse: {
                     self.viewModel.setSelectedPromptID(nil, for: mode)
@@ -180,19 +209,19 @@ extension AIEnhancementSettingsView {
             )
 
             if customProfiles.isEmpty {
-                Text("No custom \(mode.displayName.lowercased()) prompts yet.")
+                Text("No custom \(self.friendlyModeName(mode).lowercased()) prompts yet.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
             } else {
                 ForEach(customProfiles) { profile in
                     self.promptProfileCard(
+                        cardKey: "\(profile.mode.normalized.rawValue)-\(profile.id)",
                         title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
                         subtitle: SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt).isEmpty
                             ? "Empty prompt (uses Default)"
                             : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
                         mode: profile.mode,
-                        contextState: profile.mode.normalized == .edit ? profile.includeContext : nil,
                         isSelected: self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
                         onUse: {
                             self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
@@ -203,14 +232,255 @@ extension AIEnhancementSettingsView {
                 }
             }
         }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            tone.opacity(mode.normalized == .dictate ? 0.14 : 0.08),
+                            self.theme.palette.contentBackground.opacity(0.28),
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(tone.opacity(mode.normalized == .dictate ? 0.34 : 0.22), lineWidth: 1)
+                )
+        )
+    }
+
+    private var editModeProviderModelRow: some View {
+        let verified = self.editModeVerifiedProviders
+
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.fluidGreen)
+                Text("Verified Provider & Model for Edit Text")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(self.theme.palette.secondaryText)
+            }
+
+            Toggle("Sync with AI Enhancement model", isOn: self.editModeLinkedToGlobalBinding)
+                .toggleStyle(.checkbox)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .onChange(of: self.settings.rewriteModeLinkedToGlobal) { _, linked in
+                    if linked {
+                        self.syncEditModeToGlobalSelection()
+                    } else {
+                        self.normalizeEditModeProviderSelection()
+                    }
+                }
+
+            if verified.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    Text("No verified providers yet. Verify a provider above to enable Edit Text model selection.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(self.theme.palette.cardBackground.opacity(0.45))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(self.theme.palette.cardBorder.opacity(0.25), lineWidth: 1)
+                        )
+                )
+            } else {
+                let providerID = self.activeEditModeProviderID
+                let models = self.viewModel.models(for: providerID)
+                HStack(alignment: .center, spacing: 10) {
+                    Text("Provider")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("", selection: self.editModeProviderBinding) {
+                        ForEach(verified) { provider in
+                            Text(provider.name).tag(provider.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 170)
+                    .disabled(self.settings.rewriteModeLinkedToGlobal)
+
+                    Text("Model")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    SearchableModelPicker(
+                        models: models,
+                        selectedModel: self.editModeModelBinding(for: providerID),
+                        onRefresh: { await self.viewModel.fetchModels(for: providerID) },
+                        isRefreshing: self.viewModel.refreshingProviderID == providerID,
+                        refreshEnabled: !self.settings.rewriteModeLinkedToGlobal && self.canFetchModels(for: providerID),
+                        selectionEnabled: !self.settings.rewriteModeLinkedToGlobal && !models.isEmpty,
+                        controlWidth: 190,
+                        controlHeight: 28
+                    )
+                    .disabled(self.settings.rewriteModeLinkedToGlobal)
+                }
+                .padding(10)
+                .opacity(self.settings.rewriteModeLinkedToGlobal ? 0.65 : 1)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(self.theme.palette.cardBackground.opacity(0.45))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(self.theme.palette.cardBorder.opacity(0.25), lineWidth: 1)
+                        )
+                )
+                .onAppear {
+                    self.normalizeEditModeProviderSelection()
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    private var editModeVerifiedProviders: [AIEnhancementSettingsViewModel.ProviderItemData] {
+        self.viewModel.cachedVerifiedProviderItems.sorted { lhs, rhs in
+            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    private var editModeSelectedProviderID: String {
+        let current = self.settings.rewriteModeSelectedProviderID
+        if self.editModeVerifiedProviders.contains(where: { $0.id == current }) {
+            return current
+        }
+        return self.editModeVerifiedProviders.first?.id ?? current
+    }
+
+    private var activeEditModeProviderID: String {
+        if self.settings.rewriteModeLinkedToGlobal {
+            return self.viewModel.selectedProviderID
+        }
+        return self.editModeSelectedProviderID
+    }
+
+    private var editModeLinkedToGlobalBinding: Binding<Bool> {
+        Binding(
+            get: { self.settings.rewriteModeLinkedToGlobal },
+            set: { self.settings.rewriteModeLinkedToGlobal = $0 }
+        )
+    }
+
+    private var editModeProviderBinding: Binding<String> {
+        Binding(
+            get: { self.activeEditModeProviderID },
+            set: { newProviderID in
+                guard !self.settings.rewriteModeLinkedToGlobal else { return }
+                self.settings.rewriteModeSelectedProviderID = newProviderID
+                let models = self.viewModel.models(for: newProviderID)
+                let current = self.settings.rewriteModeSelectedModel ?? ""
+                if !models.contains(current) {
+                    self.settings.rewriteModeSelectedModel = models.first
+                }
+            }
+        )
+    }
+
+    private func editModeModelBinding(for providerID: String) -> Binding<String> {
+        Binding(
+            get: {
+                if self.settings.rewriteModeLinkedToGlobal {
+                    let key = self.viewModel.providerKey(for: providerID)
+                    return self.settings.selectedModelByProvider[key]
+                        ?? self.settings.selectedModel
+                        ?? self.viewModel.models(for: providerID).first
+                        ?? ""
+                }
+                return self.settings.rewriteModeSelectedModel ?? self.viewModel.models(for: providerID).first ?? ""
+            },
+            set: { newModel in
+                guard !self.settings.rewriteModeLinkedToGlobal else { return }
+                self.settings.rewriteModeSelectedModel = newModel
+            }
+        )
+    }
+
+    private func normalizeEditModeProviderSelection() {
+        guard let first = self.editModeVerifiedProviders.first else { return }
+        let current = self.settings.rewriteModeSelectedProviderID
+        if !self.editModeVerifiedProviders.contains(where: { $0.id == current }) {
+            self.settings.rewriteModeSelectedProviderID = first.id
+        }
+
+        let providerID = self.settings.rewriteModeSelectedProviderID
+        let models = self.viewModel.models(for: providerID)
+        let currentModel = self.settings.rewriteModeSelectedModel ?? ""
+        if !models.contains(currentModel) {
+            self.settings.rewriteModeSelectedModel = models.first
+        }
+    }
+
+    private func syncEditModeToGlobalSelection() {
+        let providerID = self.viewModel.selectedProviderID
+        self.settings.rewriteModeSelectedProviderID = providerID
+
+        let key = self.viewModel.providerKey(for: providerID)
+        let model = self.settings.selectedModelByProvider[key]
+            ?? self.settings.selectedModel
+            ?? self.viewModel.models(for: providerID).first
+        self.settings.rewriteModeSelectedModel = model
+    }
+
+    private func canFetchModels(for providerID: String) -> Bool {
+        let key = self.viewModel.providerKey(for: providerID)
+        let apiKey = self.viewModel.providerAPIKeys[key] ?? ""
+        let hasAPIKey = !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        let baseURL: String
+        if let saved = self.viewModel.savedProviders.first(where: { $0.id == providerID }) {
+            baseURL = saved.baseURL
+        } else {
+            baseURL = ModelRepository.shared.defaultBaseURL(for: providerID)
+        }
+        let trimmedBaseURL = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isLocal = self.viewModel.isLocalEndpoint(trimmedBaseURL)
+
+        return isLocal ? !trimmedBaseURL.isEmpty : (hasAPIKey && !trimmedBaseURL.isEmpty)
     }
 
     private func promptSectionDescription(for mode: SettingsStore.PromptMode) -> String {
         switch mode {
         case .dictate:
-            return "Turns raw speech into polished text (clean up, email drafts, code, terminal commands, etc)."
+            return "No selected-text context - Process raw voice text - clean, write into email, convert terminal commands, translate etc."
         case .edit, .write, .rewrite:
-            return "Writes fresh content or edits selected text using optional context."
+            return "Uses selected text as context (when text is selected) - Edit or rewrite selected text - answer questions, summarize, convert to bullets etc."
+        }
+    }
+
+    private func modeAccentColor(_ mode: SettingsStore.PromptMode) -> Color {
+        _ = mode
+        return Color.fluidGreen
+    }
+
+    private func modeSymbol(_ mode: SettingsStore.PromptMode) -> String {
+        switch mode.normalized {
+        case .dictate:
+            return "mic.fill"
+        case .edit, .write, .rewrite:
+            return "square.and.pencil"
+        }
+    }
+
+    private func friendlyModeName(_ mode: SettingsStore.PromptMode) -> String {
+        switch mode.normalized {
+        case .dictate:
+            return "Dictate"
+        case .edit, .write, .rewrite:
+            return "Edit Text"
         }
     }
 
@@ -220,8 +490,8 @@ extension AIEnhancementSettingsView {
                 VStack(alignment: .leading, spacing: 2) {
                     Text({
                         switch mode {
-                        case let .defaultPrompt(promptMode): return "Default \(promptMode.displayName) Prompt"
-                        case let .newPrompt(prefillMode): return "New \(prefillMode.displayName) Prompt"
+                        case let .defaultPrompt(promptMode): return "Default \(self.friendlyModeName(promptMode)) Prompt"
+                        case let .newPrompt(prefillMode): return "New \(self.friendlyModeName(prefillMode)) Prompt"
                         case .edit: return "Edit Prompt"
                         }
                     }())
@@ -242,7 +512,7 @@ extension AIEnhancementSettingsView {
                     .foregroundStyle(.secondary)
                 Picker("Mode", selection: self.$viewModel.draftPromptMode) {
                     ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
-                        Text(mode.displayName).tag(mode)
+                        Text(self.friendlyModeName(mode)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -287,11 +557,11 @@ extension AIEnhancementSettingsView {
 
             if self.viewModel.draftPromptMode != .dictate {
                 VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Include selected text context", isOn: self.$viewModel.draftIncludeContext)
-                        .toggleStyle(.switch)
-                        .disabled(mode.isDefault)
+                    Text("Selected text is added automatically when text is selected.")
+                        .font(.caption)
+                        .foregroundStyle(self.theme.palette.secondaryText)
 
-                    Text("Template added when enabled:")
+                    Text("Context block added automatically:")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 

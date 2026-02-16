@@ -80,8 +80,7 @@ final class RewriteModeService: ObservableObject {
         } else {
             // Rewrite Mode: User has selected text and is giving instructions
             self.isWriteMode = false
-            let includeContext = SettingsStore.shared.selectedPromptProfile(for: .edit)?.includeContext ?? true
-            let hasContext = includeContext && !self.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasContext = !self.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
             if self.conversationHistory.isEmpty {
                 let rewritePrompt: String
@@ -177,22 +176,24 @@ final class RewriteModeService: ObservableObject {
         let promptBody = settings.effectivePromptBody(for: promptMode)
         let builtInDefaultPrompt = SettingsStore.defaultSystemPromptText(for: promptMode)
         let systemPromptBeforeContext = settings.effectiveSystemPrompt(for: promptMode)
-        // Use Edit Mode's independent provider/model settings (backed by legacy rewriteMode settings keys)
-        let providerID = settings.rewriteModeSelectedProviderID
+        // Use global provider/model when linked, otherwise use Edit Mode's independent settings.
+        let providerID: String = {
+            if settings.rewriteModeLinkedToGlobal {
+                return settings.selectedProviderID
+            }
+            return settings.rewriteModeSelectedProviderID
+        }()
 
         var systemPrompt = systemPromptBeforeContext
-        let includeContext = settings.selectedPromptProfile(for: promptMode)?.includeContext ?? true
         let contextText = self.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines)
         var contextBlock = ""
-        if includeContext {
-            contextBlock = SettingsStore.runtimeContextBlock(
-                context: self.selectedContextText,
-                template: SettingsStore.contextTemplateText()
-            )
-            if !contextBlock.isEmpty {
-                systemPrompt = "\(systemPrompt)\n\n\(contextBlock)"
-                DebugLogger.shared.debug("Injected selected-text context into \(promptMode.rawValue) prompt", source: "RewriteModeService")
-            }
+        contextBlock = SettingsStore.runtimeContextBlock(
+            context: self.selectedContextText,
+            template: SettingsStore.contextTemplateText()
+        )
+        if !contextBlock.isEmpty {
+            systemPrompt = "\(systemPrompt)\n\n\(contextBlock)"
+            DebugLogger.shared.debug("Injected selected-text context into \(promptMode.rawValue) prompt", source: "RewriteModeService")
         }
 
         if self.shouldTracePromptProcessing {
@@ -233,7 +234,22 @@ final class RewriteModeService: ObservableObject {
             )
         }
 
-        let model = settings.rewriteModeSelectedModel ?? "gpt-4.1"
+        let model: String = {
+            if settings.rewriteModeLinkedToGlobal {
+                let key: String
+                if ModelRepository.shared.isBuiltIn(providerID) {
+                    key = providerID
+                } else if providerID.hasPrefix("custom:") {
+                    key = providerID
+                } else {
+                    key = "custom:\(providerID)"
+                }
+                return settings.selectedModelByProvider[key]
+                    ?? settings.selectedModel
+                    ?? "gpt-4.1"
+            }
+            return settings.rewriteModeSelectedModel ?? "gpt-4.1"
+        }()
         let apiKey = settings.getAPIKey(for: providerID) ?? ""
 
         let baseURL: String

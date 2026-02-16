@@ -444,7 +444,7 @@ final class MenuBarManager: ObservableObject {
         if let window = hostedWindow, window.isReleasedWhenClosed == false {
             self.ensureUsableMainWindow(window)
             window.animationBehavior = .none
-            window.makeKeyAndOrderFront(nil)
+            self.bringToFront(window)
         } else if let window = NSApp.windows.first(where: { win in
             // Only normal app windows (exclude overlays/panels/menus)
             guard win.level == .normal else { return false }
@@ -457,7 +457,7 @@ final class MenuBarManager: ObservableObject {
         }) {
             self.ensureUsableMainWindow(window)
             window.animationBehavior = .none
-            window.makeKeyAndOrderFront(nil)
+            self.bringToFront(window)
             self.hostedWindow = window
         } else {
             // If there is no suitable window (or it's minimized), create a fresh one.
@@ -466,6 +466,9 @@ final class MenuBarManager: ObservableObject {
 
         // Final attempt: ensure app is active and visible
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     @objc private func openPreferences() {
@@ -506,11 +509,14 @@ final class MenuBarManager: ObservableObject {
         window.isReleasedWhenClosed = false
         window.contentViewController = hostingController
         window.setFrame(self.defaultWindowFrame(), display: false)
-        window.makeKeyAndOrderFront(nil)
+        self.bringToFront(window)
         self.hostedWindow = window
 
         // Bring app to front in case we're running as an accessory app (no Dock)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     private func ensureUsableMainWindow(_ window: NSWindow) {
@@ -533,5 +539,11 @@ final class MenuBarManager: ObservableObject {
             y: screenFrame.midY - size.height / 2
         )
         return NSRect(origin: origin, size: size)
+    }
+
+    private func bringToFront(_ window: NSWindow) {
+        // Keep ordering explicit to avoid "opened but behind other apps" behavior.
+        window.orderFrontRegardless()
+        window.makeKeyAndOrderFront(nil)
     }
 }

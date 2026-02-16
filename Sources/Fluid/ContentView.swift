@@ -782,7 +782,7 @@ struct ContentView: View {
             .listRowBackground(self.sidebarRowBackground(for: .commandMode))
 
             NavigationLink(value: SidebarItem.rewriteMode) {
-                Label("Edit Mode", systemImage: "pencil.and.outline")
+                Label("Edit Text Mode", systemImage: "pencil.and.outline")
                     .font(.system(size: 15, weight: .medium))
             }
             .listRowBackground(self.sidebarRowBackground(for: .rewriteMode))
