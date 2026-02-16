@@ -215,11 +215,11 @@ struct WelcomeView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // Write Mode
+                // Edit Mode
                 ThemedCard(style: .standard) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
-                            Label("Write Mode", systemImage: "pencil.and.outline")
+                            Label("Edit Mode", systemImage: "pencil.and.outline")
                                 .font(.headline)
                                 .foregroundStyle(.blue)
 
@@ -234,13 +234,13 @@ struct WelcomeView: View {
                             .controlSize(.small)
                         }
 
-                        Text("AI-powered writing assistant. Write fresh content or rewrite selected text with voice.")
+                        Text("AI-powered editing assistant. Write fresh content or edit selected text with voice.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
                         VStack(alignment: .leading, spacing: 10) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("To Write Fresh")
+                                Text("Create New Text")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.blue)
 
@@ -257,7 +257,7 @@ struct WelcomeView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("To Rewrite/Edit")
+                                Text("Edit Selected Text")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.blue)
 

@@ -99,9 +99,12 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     // Dictation Prompt Profiles UI
     @Published var dictationPromptProfiles: [SettingsStore.DictationPromptProfile] = []
     @Published var selectedDictationPromptID: String? = nil
+    @Published var selectedEditPromptID: String? = nil
     @Published var promptEditorMode: PromptEditorMode? = nil
     @Published var draftPromptName: String = ""
     @Published var draftPromptText: String = ""
+    @Published var draftPromptMode: SettingsStore.PromptMode = .dictate
+    @Published var draftIncludeContext: Bool = false
     @Published var promptEditorSessionID: UUID = .init()
 
     // Prompt Deletion UI
@@ -136,6 +139,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.savedProviders = self.settings.savedProviders
         self.dictationPromptProfiles = self.settings.dictationPromptProfiles
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
+        self.selectedEditPromptID = self.settings.selectedEditPromptID
 
         // Normalize provider keys
         var normalized: [String: [String]] = [:]
@@ -1135,9 +1139,9 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     }
 
     /// Combine a user-visible body with the hidden base prompt to ensure role/intent is always present.
-    func combinedDraftPrompt(_ text: String) -> String {
-        let body = SettingsStore.stripBaseDictationPrompt(from: text)
-        return SettingsStore.combineBasePrompt(with: body)
+    func combinedDraftPrompt(_ text: String, mode: SettingsStore.PromptMode) -> String {
+        let body = SettingsStore.stripBasePrompt(for: mode, from: text)
+        return SettingsStore.combineBasePrompt(for: mode, with: body)
     }
 
     func requestDeletePrompt(_ profile: SettingsStore.DictationPromptProfile) {
@@ -1164,12 +1168,15 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.settings.dictationPromptProfiles = profiles
 
         // If the deleted profile was active, reset to Default
-        if self.settings.selectedDictationPromptID == id {
-            self.settings.selectedDictationPromptID = nil
+        if let deleted = self.dictationPromptProfiles.first(where: { $0.id == id }),
+           self.settings.selectedPromptID(for: deleted.mode) == id
+        {
+            self.settings.setSelectedPromptID(nil, for: deleted.mode)
         }
 
         self.dictationPromptProfiles = profiles
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
+        self.selectedEditPromptID = self.settings.selectedEditPromptID
 
         self.clearPendingDeletePrompt()
     }
@@ -1178,27 +1185,34 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         DictationAIPostProcessingGate.isConfigured()
     }
 
-    func openDefaultPromptViewer() {
-        self.draftPromptName = "Default"
-        if let override = self.settings.defaultDictationPromptOverride {
-            self.draftPromptText = SettingsStore.stripBaseDictationPrompt(from: override)
+    func openDefaultPromptViewer(for mode: SettingsStore.PromptMode) {
+        let normalizedMode = mode.normalized
+        self.draftPromptMode = normalizedMode
+        self.draftIncludeContext = (normalizedMode == .edit)
+        self.draftPromptName = "Default \(normalizedMode.displayName)"
+        if let override = self.settings.defaultPromptOverride(for: normalizedMode) {
+            self.draftPromptText = SettingsStore.stripBasePrompt(for: normalizedMode, from: override)
         } else {
-            self.draftPromptText = SettingsStore.defaultDictationPromptBodyText()
+            self.draftPromptText = SettingsStore.defaultPromptBodyText(for: normalizedMode)
         }
         self.promptEditorSessionID = UUID()
-        self.promptEditorMode = .defaultPrompt
+        self.promptEditorMode = .defaultPrompt(mode: normalizedMode)
     }
 
-    func openNewPromptEditor() {
+    func openNewPromptEditor(prefillMode: SettingsStore.PromptMode = .edit) {
+        self.draftPromptMode = prefillMode.normalized
+        self.draftIncludeContext = (self.draftPromptMode == .edit)
         self.draftPromptName = "New Prompt"
         self.draftPromptText = ""
         self.promptEditorSessionID = UUID()
-        self.promptEditorMode = .newPrompt
+        self.promptEditorMode = .newPrompt(prefillMode: self.draftPromptMode)
     }
 
     func openEditor(for profile: SettingsStore.DictationPromptProfile) {
+        self.draftPromptMode = profile.mode.normalized
+        self.draftIncludeContext = profile.includeContext
         self.draftPromptName = profile.name
-        self.draftPromptText = SettingsStore.stripBaseDictationPrompt(from: profile.prompt)
+        self.draftPromptText = SettingsStore.stripBasePrompt(for: self.draftPromptMode, from: profile.prompt)
         self.promptEditorSessionID = UUID()
         self.promptEditorMode = .edit(promptID: profile.id)
     }
@@ -1207,20 +1221,22 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.promptEditorMode = nil
         self.draftPromptName = ""
         self.draftPromptText = ""
+        self.draftPromptMode = .dictate
+        self.draftIncludeContext = false
         self.promptTest.deactivate()
     }
 
     func savePromptEditor(mode: PromptEditorMode) {
         // Default prompt is non-deletable; save it via the optional override (empty is allowed).
         if mode.isDefault {
-            let body = SettingsStore.stripBaseDictationPrompt(from: self.draftPromptText)
-            self.settings.defaultDictationPromptOverride = body
+            let body = SettingsStore.stripBasePrompt(for: self.draftPromptMode, from: self.draftPromptText)
+            self.settings.setDefaultPromptOverride(body, for: self.draftPromptMode)
             self.closePromptEditor()
             return
         }
 
         let name = self.draftPromptName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let promptBody = SettingsStore.stripBaseDictationPrompt(from: self.draftPromptText)
+        let promptBody = SettingsStore.stripBasePrompt(for: self.draftPromptMode, from: self.draftPromptText)
 
         var profiles = self.settings.dictationPromptProfiles
         let now = Date()
@@ -1228,19 +1244,60 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         if let id = mode.editingPromptID,
            let idx = profiles.firstIndex(where: { $0.id == id })
         {
+            let previous = profiles[idx]
             var updated = profiles[idx]
             updated.name = name
             updated.prompt = promptBody
+            updated.mode = self.draftPromptMode.normalized
+            updated.includeContext = self.draftIncludeContext
             updated.updatedAt = now
             profiles[idx] = updated
+
+            if previous.mode != updated.mode,
+               self.settings.selectedPromptID(for: previous.mode) == id
+            {
+                self.settings.setSelectedPromptID(nil, for: previous.mode)
+            }
         } else {
-            let newProfile = SettingsStore.DictationPromptProfile(name: name, prompt: promptBody, createdAt: now, updatedAt: now)
+            let newProfile = SettingsStore.DictationPromptProfile(
+                name: name,
+                prompt: promptBody,
+                mode: self.draftPromptMode.normalized,
+                includeContext: self.draftIncludeContext,
+                createdAt: now,
+                updatedAt: now
+            )
             profiles.append(newProfile)
         }
 
         self.settings.dictationPromptProfiles = profiles
         self.dictationPromptProfiles = profiles
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
+        self.selectedEditPromptID = self.settings.selectedEditPromptID
         self.closePromptEditor()
+    }
+
+    func selectedPromptID(for mode: SettingsStore.PromptMode) -> String? {
+        switch mode.normalized {
+        case .dictate:
+            return self.selectedDictationPromptID
+        case .edit:
+            return self.selectedEditPromptID
+        case .write, .rewrite:
+            return self.selectedEditPromptID
+        }
+    }
+
+    func setSelectedPromptID(_ id: String?, for mode: SettingsStore.PromptMode) {
+        self.settings.setSelectedPromptID(id, for: mode.normalized)
+        self.selectedDictationPromptID = self.settings.selectedDictationPromptID
+        self.selectedEditPromptID = self.settings.selectedEditPromptID
+    }
+
+    func defaultPromptBodyPreview(for mode: SettingsStore.PromptMode) -> String {
+        if let override = self.settings.defaultPromptOverride(for: mode) {
+            return SettingsStore.stripBasePrompt(for: mode, from: override)
+        }
+        return SettingsStore.defaultPromptBodyText(for: mode)
     }
 }

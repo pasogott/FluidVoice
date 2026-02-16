@@ -589,6 +589,7 @@ struct ContentView: View {
             }
         }
         .onDisappear {
+            NotchContentState.shared.onPromptModeSwitchRequested = nil
             Task { await self.asr.stopWithoutTranscription() }
             // Note: Overlay lifecycle is now managed by MenuBarManager
 
@@ -682,12 +683,7 @@ struct ContentView: View {
                 self.menuBarManager.setOverlayMode(.command)
 
             case .rewriteMode:
-                // Check if in write mode (no original text) vs rewrite mode
-                if self.rewriteModeService.isWriteMode || self.rewriteModeService.originalText.isEmpty {
-                    self.menuBarManager.setOverlayMode(.write)
-                } else {
-                    self.menuBarManager.setOverlayMode(.rewrite)
-                }
+                self.menuBarManager.setOverlayMode(.edit)
 
             default:
                 // For all other views, set to dictation mode
@@ -785,7 +781,7 @@ struct ContentView: View {
             .listRowBackground(self.sidebarRowBackground(for: .commandMode))
 
             NavigationLink(value: SidebarItem.rewriteMode) {
-                Label("Write Mode", systemImage: "pencil.and.outline")
+                Label("Edit Mode", systemImage: "pencil.and.outline")
                     .font(.system(size: 15, weight: .medium))
             }
             .listRowBackground(self.sidebarRowBackground(for: .rewriteMode))
@@ -1267,39 +1263,8 @@ struct ContentView: View {
 
     /// Build a general system prompt with voice editing commands support
     private func buildSystemPrompt(appInfo: (name: String, bundleId: String, windowTitle: String)) -> String {
-        // Use selected prompt profile (if any), otherwise use the default built-in prompt
-        if let profile = SettingsStore.shared.selectedDictationPromptProfile {
-            let promptBody = SettingsStore.stripBaseDictationPrompt(from: profile.prompt)
-            if !promptBody.isEmpty {
-                AnalyticsService.shared.capture(
-                    .customPromptUsed,
-                    properties: self.customPromptAnalyticsProperties(
-                        promptSource: "profile",
-                        overrideEmpty: nil
-                    )
-                )
-                return SettingsStore.combineBasePrompt(with: promptBody)
-            }
-        }
-
-        // Default override (including empty string to intentionally use no system prompt)
-        if let override = SettingsStore.shared.defaultDictationPromptOverride {
-            let trimmedOverride = override.trimmingCharacters(in: .whitespacesAndNewlines)
-            AnalyticsService.shared.capture(
-                .customPromptUsed,
-                properties: self.customPromptAnalyticsProperties(
-                    promptSource: "default_override",
-                    overrideEmpty: trimmedOverride.isEmpty
-                )
-            )
-            // Empty override means explicitly use no system prompt
-            guard !trimmedOverride.isEmpty else { return override }
-
-            let body = SettingsStore.stripBaseDictationPrompt(from: trimmedOverride)
-            return SettingsStore.combineBasePrompt(with: body)
-        }
-
-        return SettingsStore.defaultDictationPromptText()
+        _ = appInfo
+        return SettingsStore.shared.effectiveSystemPrompt(for: .dictate)
     }
 
     private func customPromptAnalyticsProperties(promptSource: String, overrideEmpty: Bool?) -> [String: Any] {
@@ -1755,6 +1720,37 @@ struct ContentView: View {
         }
     }
 
+    private func handleLivePromptModeSwitch(_ mode: SettingsStore.PromptMode) {
+        guard !NotchContentState.shared.isProcessing else { return }
+        switch mode.normalized {
+        case .dictate:
+            guard self.isRecordingForRewrite || NotchContentState.shared.mode != .dictation else { return }
+            self.isRecordingForRewrite = false
+            self.rewriteModeService.clearState()
+            self.menuBarManager.setOverlayMode(.dictation)
+        case .edit:
+            guard self.isRecordingForRewrite == false || NotchContentState.shared.mode == .dictation else { return }
+            self.isRecordingForRewrite = true
+            self.isRecordingForCommand = false
+            let hasOriginal = !self.rewriteModeService.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasContext = !self.rewriteModeService.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !hasOriginal, !hasContext {
+                self.rewriteModeService.startWithoutSelection()
+            }
+            self.menuBarManager.setOverlayMode(.edit)
+        case .write, .rewrite:
+            guard self.isRecordingForRewrite == false || NotchContentState.shared.mode == .dictation else { return }
+            self.isRecordingForRewrite = true
+            self.isRecordingForCommand = false
+            let hasOriginal = !self.rewriteModeService.originalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasContext = !self.rewriteModeService.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !hasOriginal, !hasContext {
+                self.rewriteModeService.startWithoutSelection()
+            }
+            self.menuBarManager.setOverlayMode(.edit)
+        }
+    }
+
     // MARK: - Command Mode Voice Processing
 
     private func processCommandWithVoice(_ command: String) async {
@@ -2001,6 +1997,10 @@ struct ContentView: View {
     }
 
     private func initializeHotkeyManagerIfNeeded() {
+        NotchContentState.shared.onPromptModeSwitchRequested = { mode in
+            self.handleLivePromptModeSwitch(mode)
+        }
+
         guard self.hotkeyManager == nil else { return }
 
         self.hotkeyManager = GlobalHotkeyManager(
@@ -2051,18 +2051,18 @@ struct ContentView: View {
                             source: "ContentView"
                         )
                     self.rewriteModeService.startWithoutSelection()
-                    // Set overlay mode to write (different visual)
-                    self.menuBarManager.setOverlayMode(.write)
+                    // Set overlay mode to edit
+                    self.menuBarManager.setOverlayMode(.edit)
                 } else {
-                    // Text was selected - rewrite mode
-                    self.menuBarManager.setOverlayMode(.rewrite)
+                    // Text was selected - edit mode (with selected context)
+                    self.menuBarManager.setOverlayMode(.edit)
                 }
 
                 // Set flag so stopAndProcessTranscription knows to process as rewrite
                 self.isRecordingForRewrite = true
 
-                // Start recording immediately for the rewrite instruction (or text to improve)
-                DebugLogger.shared.info("Starting voice recording for rewrite/write mode", source: "ContentView")
+                // Start recording immediately for the edit instruction
+                DebugLogger.shared.info("Starting voice recording for edit mode", source: "ContentView")
                 if SettingsStore.shared.enableTranscriptionSounds {
                     TranscriptionSoundPlayer.shared.playStartSound()
                 }

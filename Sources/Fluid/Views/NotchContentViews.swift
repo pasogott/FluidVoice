@@ -18,6 +18,7 @@ class NotchContentState: ObservableObject {
 
     @Published var transcriptionText: String = ""
     @Published var mode: OverlayMode = .dictation
+    @Published var promptPickerMode: SettingsStore.PromptMode = .dictate
     @Published var isProcessing: Bool = false // AI processing state
 
     // Icon of the target app (where text will be typed)
@@ -124,6 +125,9 @@ class NotchContentState: ObservableObject {
 
     @Published var bottomOverlayAudioLevel: CGFloat = 0 // Audio level for bottom overlay waveform
 
+    /// Called when the user requests a live mode switch from the prompt picker tabs.
+    var onPromptModeSwitchRequested: ((SettingsStore.PromptMode) -> Void)?
+
     /// Set recording state (for waveform visibility in expanded view)
     func setRecordingInExpandedMode(_ recording: Bool) {
         self.isRecordingInExpandedMode = recording
@@ -198,6 +202,8 @@ extension OverlayMode {
         switch self {
         case .dictation:
             return Color.white.opacity(0.85)
+        case .edit:
+            return Color(red: 0.4, green: 0.6, blue: 1.0) // Blue (Edit)
         case .rewrite:
             return Color(red: 0.45, green: 0.55, blue: 1.0) // Lighter blue
         case .write:
@@ -263,8 +269,7 @@ struct NotchExpandedView: View {
     private var modeLabel: String {
         switch self.contentState.mode {
         case .dictation: return "Dictate"
-        case .rewrite: return "Rewrite"
-        case .write: return "Write"
+        case .edit, .rewrite, .write: return "Edit"
         case .command: return "Command"
         }
     }
@@ -272,8 +277,7 @@ struct NotchExpandedView: View {
     private var processingLabel: String {
         switch self.contentState.mode {
         case .dictation: return "Refining..."
-        case .rewrite: return "Thinking..."
-        case .write: return "Thinking..."
+        case .edit, .rewrite, .write: return "Thinking..."
         case .command: return "Working..."
         }
     }
@@ -294,12 +298,15 @@ struct NotchExpandedView: View {
         self.contentState.mode == .command && !self.contentState.commandConversationHistory.isEmpty
     }
 
-    private var isDictationMode: Bool {
-        self.contentState.mode == .dictation
+    private var isPromptSelectableMode: Bool {
+        self.contentState.mode == .dictation ||
+            self.contentState.mode == .edit ||
+            self.contentState.mode == .write ||
+            self.contentState.mode == .rewrite
     }
 
     private var selectedPromptLabel: String {
-        if let profile = self.settings.selectedDictationPromptProfile {
+        if let profile = self.settings.selectedPromptProfile(for: self.contentState.promptPickerMode) {
             let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? "Untitled" : name
         }
@@ -315,6 +322,10 @@ struct NotchExpandedView: View {
     }
 
     private func handlePromptHover(_ hovering: Bool) {
+        guard self.isPromptSelectableMode, !self.contentState.isProcessing else {
+            self.showPromptHoverMenu = false
+            return
+        }
         self.promptHoverWorkItem?.cancel()
         let task = DispatchWorkItem {
             self.showPromptHoverMenu = hovering
@@ -325,8 +336,31 @@ struct NotchExpandedView: View {
 
     private func promptMenuContent() -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                ForEach(SettingsStore.PromptMode.visiblePromptModes, id: \.rawValue) { mode in
+                    Button(action: {
+                        let normalizedMode = mode.normalized
+                        if !self.contentState.isProcessing {
+                            self.contentState.onPromptModeSwitchRequested?(normalizedMode)
+                        }
+                        self.contentState.promptPickerMode = normalizedMode
+                    }) {
+                        Text(mode.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(self.contentState.promptPickerMode == mode ? Color.white.opacity(0.18) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 6)
+
             Button(action: {
-                self.settings.selectedDictationPromptID = nil
+                self.settings.setSelectedPromptID(nil, for: self.contentState.promptPickerMode)
                 let pid = NotchContentState.shared.recordingTargetPID
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     if let pid { _ = TypingService.activateApp(pid: pid) }
@@ -336,7 +370,7 @@ struct NotchExpandedView: View {
                 HStack {
                     Text("Default")
                     Spacer()
-                    if self.settings.selectedDictationPromptID == nil {
+                    if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == nil {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .semibold))
                     }
@@ -345,13 +379,13 @@ struct NotchExpandedView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 4)
 
-            if !self.settings.dictationPromptProfiles.isEmpty {
+            if !self.settings.promptProfiles(for: self.contentState.promptPickerMode).isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 
-                ForEach(self.settings.dictationPromptProfiles) { profile in
+                ForEach(self.settings.promptProfiles(for: self.contentState.promptPickerMode)) { profile in
                     Button(action: {
-                        self.settings.selectedDictationPromptID = profile.id
+                        self.settings.setSelectedPromptID(profile.id, for: self.contentState.promptPickerMode)
                         let pid = NotchContentState.shared.recordingTargetPID
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             if let pid { _ = TypingService.activateApp(pid: pid) }
@@ -361,7 +395,7 @@ struct NotchExpandedView: View {
                         HStack {
                             Text(profile.name.isEmpty ? "Untitled" : profile.name)
                             Spacer()
-                            if self.settings.selectedDictationPromptID == profile.id {
+                            if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == profile.id {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 10, weight: .semibold))
                             }
@@ -412,11 +446,14 @@ struct NotchExpandedView: View {
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(self.modeColor)
                         .opacity(0.9)
+                        .onHover { hovering in
+                            self.handlePromptHover(hovering)
+                        }
                 }
             }
 
-            // Dictation prompt selector (only in dictation mode)
-            if self.isDictationMode && !self.contentState.isProcessing {
+            // Prompt selector (dictate/write/rewrite modes)
+            if self.isPromptSelectableMode && !self.contentState.isProcessing {
                 ZStack(alignment: .top) {
                     HStack(spacing: 6) {
                         Text("Prompt:")
@@ -490,6 +527,16 @@ struct NotchExpandedView: View {
             // If in command mode with history, clicking expands the conversation
             if self.canExpandCommandHistory {
                 NotchOverlayManager.shared.onNotchClicked?()
+            }
+        }
+        .onChange(of: self.contentState.mode) { _, _ in
+            if !self.isPromptSelectableMode {
+                self.showPromptHoverMenu = false
+            }
+            switch self.contentState.mode {
+            case .dictation: self.contentState.promptPickerMode = .dictate
+            case .edit, .write, .rewrite: self.contentState.promptPickerMode = .edit
+            case .command: break
             }
         }
         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: self.hasTranscription)

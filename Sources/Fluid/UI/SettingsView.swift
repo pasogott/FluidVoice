@@ -444,8 +444,8 @@ struct SettingsView: View {
                                     self.shortcutRow(
                                         icon: "pencil.and.outline",
                                         iconColor: .secondary,
-                                        title: "Write Mode",
-                                        description: "Select text and speak how to rewrite, or write new content",
+                                        title: "Edit Mode",
+                                        description: "Select text and speak how to edit, or generate new content",
                                         shortcut: self.rewriteShortcut,
                                         isRecording: self.isRecordingRewriteShortcut,
                                         isEnabled: self.$rewriteShortcutEnabled,

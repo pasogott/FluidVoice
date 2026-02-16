@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 final class RewriteModeService: ObservableObject {
     @Published var originalText: String = ""
+    @Published var selectedContextText: String = ""
     @Published var rewrittenText: String = ""
     @Published var streamingThinkingText: String = "" // Real-time thinking tokens for UI
     @Published var isProcessing = false
@@ -29,6 +30,7 @@ final class RewriteModeService: ObservableObject {
     func captureSelectedText() -> Bool {
         if let text = textSelectionService.getSelectedText(), !text.isEmpty {
             self.originalText = text
+            self.selectedContextText = text
             self.rewrittenText = ""
             self.conversationHistory = []
             self.isWriteMode = false
@@ -40,6 +42,7 @@ final class RewriteModeService: ObservableObject {
     /// Start rewrite mode without selected text - user will provide text via voice
     func startWithoutSelection() {
         self.originalText = ""
+        self.selectedContextText = ""
         self.rewrittenText = ""
         self.conversationHistory = []
         self.isWriteMode = true
@@ -64,17 +67,24 @@ final class RewriteModeService: ObservableObject {
         } else {
             // Rewrite Mode: User has selected text and is giving instructions
             self.isWriteMode = false
+            let includeContext = SettingsStore.shared.selectedPromptProfile(for: .edit)?.includeContext ?? true
+            let hasContext = includeContext && !self.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
             if self.conversationHistory.isEmpty {
-                let rewritePrompt = """
-                Here is the text to rewrite:
+                let rewritePrompt: String
+                if hasContext {
+                    rewritePrompt = """
+                    User's instruction: \(prompt)
 
-                "\(originalText)"
+                    Apply the instruction to the selected context. Output ONLY the rewritten text, nothing else.
+                    """
+                } else {
+                    rewritePrompt = """
+                    User's instruction: \(prompt)
 
-                User's instruction: \(prompt)
-
-                Rewrite the text according to the instruction. Output ONLY the rewritten text, nothing else.
-                """
+                    Output ONLY the requested text, nothing else.
+                    """
+                }
                 self.conversationHistory.append(Message(role: .user, content: rewritePrompt))
             } else {
                 // Follow-up request
@@ -131,6 +141,7 @@ final class RewriteModeService: ObservableObject {
 
     func clearState() {
         self.originalText = ""
+        self.selectedContextText = ""
         self.rewrittenText = ""
         self.streamingThinkingText = ""
         self.conversationHistory = []
@@ -142,8 +153,22 @@ final class RewriteModeService: ObservableObject {
 
     private func callLLM(messages: [Message], isWriteMode: Bool) async throws -> String {
         let settings = SettingsStore.shared
-        // Use Write Mode's independent provider/model settings
+        let promptMode: SettingsStore.PromptMode = .edit
+        // Use Edit Mode's independent provider/model settings (backed by legacy rewriteMode settings keys)
         let providerID = settings.rewriteModeSelectedProviderID
+
+        var systemPrompt = settings.effectiveSystemPrompt(for: promptMode)
+        let includeContext = settings.selectedPromptProfile(for: promptMode)?.includeContext ?? true
+        if includeContext {
+            let contextBlock = SettingsStore.runtimeContextBlock(
+                context: self.selectedContextText,
+                template: SettingsStore.contextTemplateText()
+            )
+            if !contextBlock.isEmpty {
+                systemPrompt = "\(systemPrompt)\n\n\(contextBlock)"
+                DebugLogger.shared.debug("Injected selected-text context into \(promptMode.rawValue) prompt", source: "RewriteModeService")
+            }
+        }
 
         // Route to Apple Intelligence if selected
         if providerID == "apple-intelligence" {
@@ -152,8 +177,8 @@ final class RewriteModeService: ObservableObject {
                 let provider = AppleIntelligenceProvider()
                 let messageTuples = messages
                     .map { (role: $0.role == .user ? "user" : "assistant", content: $0.content) }
-                DebugLogger.shared.debug("Using Apple Intelligence for rewrite mode", source: "RewriteModeService")
-                return try await provider.processRewrite(messages: messageTuples, isWriteMode: isWriteMode)
+                DebugLogger.shared.debug("Using Apple Intelligence for edit mode", source: "RewriteModeService")
+                return try await provider.processRewrite(messages: messageTuples, systemPrompt: systemPrompt)
             }
             #endif
             throw NSError(
@@ -173,36 +198,6 @@ final class RewriteModeService: ObservableObject {
             baseURL = ModelRepository.shared.defaultBaseURL(for: providerID)
         } else {
             baseURL = ModelRepository.shared.defaultBaseURL(for: "openai")
-        }
-
-        // Different system prompts for each mode
-        let systemPrompt: String
-        if isWriteMode {
-            // Write Mode: Generate content based on user's request
-            systemPrompt = """
-            You are a helpful writing assistant. The user will ask you to write or generate text for them.
-
-            Examples of requests:
-            - "Write an email to my boss asking for time off"
-            - "Draft a reply saying I'll be there at 5"
-            - "Write a professional summary for LinkedIn"
-            - "Answer this: what is the capital of France"
-
-            Respond directly with the requested content. Be concise and helpful.
-            Output ONLY what they asked for - no explanations or preamble.
-            """
-        } else {
-            // Rewrite Mode: Transform selected text based on instructions
-            systemPrompt = """
-            You are a writing assistant that rewrites text according to user instructions. The user has selected existing text and wants you to transform it.
-
-            Your job:
-            - Follow the user's specific instructions for how to rewrite
-            - Maintain the core meaning unless asked to change it
-            - Apply the requested style, tone, or format changes
-
-            Output ONLY the rewritten text. No explanations, no quotes around the text, no preamble.
-            """
         }
 
         // Build messages array for LLMClient
@@ -263,7 +258,7 @@ final class RewriteModeService: ObservableObject {
             }
         }
 
-        DebugLogger.shared.info("Using LLMClient for Write/Rewrite (streaming=\(enableStreaming))", source: "RewriteModeService")
+        DebugLogger.shared.info("Using LLMClient for Edit mode (streaming=\(enableStreaming))", source: "RewriteModeService")
 
         // Clear streaming buffers before starting
         if enableStreaming {

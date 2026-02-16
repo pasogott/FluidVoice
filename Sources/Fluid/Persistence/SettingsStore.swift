@@ -20,6 +20,7 @@ final class SettingsStore: ObservableObject {
         self.migrateProviderAPIKeysIfNeeded()
         self.scrubSavedProviderAPIKeys()
         self.migrateDictationPromptProfilesIfNeeded()
+        self.normalizePromptSelectionsIfNeeded()
     }
 
     // Keys
@@ -112,38 +113,120 @@ final class SettingsStore: ObservableObject {
         // Dictation Prompt Profiles (multi-prompt system)
         static let dictationPromptProfiles = "DictationPromptProfiles"
         static let selectedDictationPromptID = "SelectedDictationPromptID"
+        static let selectedEditPromptID = "SelectedEditPromptID"
+        static let selectedWritePromptID = "SelectedWritePromptID" // legacy fallback key
+        static let selectedRewritePromptID = "SelectedRewritePromptID" // legacy fallback key
 
         // Default Dictation Prompt Override (optional)
         // nil   => use built-in default prompt
         // ""    => use empty system prompt
         // other => use custom default prompt text
         static let defaultDictationPromptOverride = "DefaultDictationPromptOverride"
+        static let defaultEditPromptOverride = "DefaultEditPromptOverride"
+        static let defaultWritePromptOverride = "DefaultWritePromptOverride" // legacy fallback key
+        static let defaultRewritePromptOverride = "DefaultRewritePromptOverride" // legacy fallback key
 
         // Streak Settings
         static let weekendsDontBreakStreak = "WeekendsDontBreakStreak"
     }
 
-    // MARK: - Dictation Prompt Profiles (Multi-prompt)
+    // MARK: - Prompt Profiles (Unified)
+
+    enum PromptMode: String, Codable, CaseIterable, Identifiable {
+        case dictate
+        case edit
+        case write // legacy persisted value (decoded as .edit)
+        case rewrite // legacy persisted value (decoded as .edit)
+
+        var id: String { self.rawValue }
+
+        static var visiblePromptModes: [PromptMode] { [.dictate, .edit] }
+
+        var normalized: PromptMode {
+            switch self {
+            case .dictate:
+                return .dictate
+            case .edit, .write, .rewrite:
+                return .edit
+            }
+        }
+
+        var displayName: String {
+            switch self.normalized {
+            case .dictate:
+                return "Dictate"
+            case .edit:
+                return "Edit"
+            case .write, .rewrite:
+                return "Edit"
+            }
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            let raw = (try? container.decode(String.self).lowercased()) ?? Self.dictate.rawValue
+            switch raw {
+            case "dictate":
+                self = .dictate
+            case "edit", "write", "rewrite":
+                self = .edit
+            default:
+                self = .dictate
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(self.normalized.rawValue)
+        }
+    }
 
     struct DictationPromptProfile: Codable, Identifiable, Hashable {
         let id: String
         var name: String
         var prompt: String
+        var mode: PromptMode
+        var includeContext: Bool
         var createdAt: Date
         var updatedAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            case prompt
+            case mode
+            case includeContext
+            case createdAt
+            case updatedAt
+        }
 
         init(
             id: String = UUID().uuidString,
             name: String,
             prompt: String,
+            mode: PromptMode = .dictate,
+            includeContext: Bool = false,
             createdAt: Date = Date(),
             updatedAt: Date = Date()
         ) {
             self.id = id
             self.name = name
             self.prompt = prompt
+            self.mode = mode
+            self.includeContext = includeContext
             self.createdAt = createdAt
             self.updatedAt = updatedAt
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try container.decode(String.self, forKey: .id)
+            self.name = try container.decode(String.self, forKey: .name)
+            self.prompt = try container.decode(String.self, forKey: .prompt)
+            self.mode = (try container.decodeIfPresent(PromptMode.self, forKey: .mode) ?? .dictate).normalized
+            self.includeContext = try container.decodeIfPresent(Bool.self, forKey: .includeContext) ?? false
+            self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+            self.updatedAt = try container.decode(Date.self, forKey: .updatedAt)
         }
     }
 
@@ -187,8 +270,85 @@ final class SettingsStore: ObservableObject {
 
     /// Convenience: currently selected profile, or nil if Default/invalid selection.
     var selectedDictationPromptProfile: DictationPromptProfile? {
-        guard let id = self.selectedDictationPromptID else { return nil }
-        return self.dictationPromptProfiles.first(where: { $0.id == id })
+        self.selectedPromptProfile(for: .dictate)
+    }
+
+    /// Selected edit prompt profile ID. `nil` means "Default Edit".
+    var selectedEditPromptID: String? {
+        get {
+            if let value = self.defaults.string(forKey: Keys.selectedEditPromptID),
+               value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            {
+                return value
+            }
+            if let legacyRewrite = self.defaults.string(forKey: Keys.selectedRewritePromptID),
+               legacyRewrite.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            {
+                return legacyRewrite
+            }
+            if let legacyWrite = self.defaults.string(forKey: Keys.selectedWritePromptID),
+               legacyWrite.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            {
+                return legacyWrite
+            }
+            return nil
+        }
+        set {
+            objectWillChange.send()
+            if let id = newValue?.trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty {
+                self.defaults.set(id, forKey: Keys.selectedEditPromptID)
+            } else {
+                self.defaults.removeObject(forKey: Keys.selectedEditPromptID)
+            }
+            // Normalize to the new key only.
+            self.defaults.removeObject(forKey: Keys.selectedWritePromptID)
+            self.defaults.removeObject(forKey: Keys.selectedRewritePromptID)
+        }
+    }
+
+    /// Legacy alias retained for compatibility.
+    var selectedWritePromptID: String? {
+        get { self.selectedEditPromptID }
+        set { self.selectedEditPromptID = newValue }
+    }
+
+    /// Legacy alias retained for compatibility.
+    var selectedRewritePromptID: String? {
+        get { self.selectedEditPromptID }
+        set { self.selectedEditPromptID = newValue }
+    }
+
+    func selectedPromptID(for mode: PromptMode) -> String? {
+        switch mode.normalized {
+        case .dictate:
+            return self.selectedDictationPromptID
+        case .edit:
+            return self.selectedEditPromptID
+        case .write, .rewrite:
+            return self.selectedEditPromptID
+        }
+    }
+
+    func setSelectedPromptID(_ id: String?, for mode: PromptMode) {
+        switch mode.normalized {
+        case .dictate:
+            self.selectedDictationPromptID = id
+        case .edit:
+            self.selectedEditPromptID = id
+        case .write, .rewrite:
+            self.selectedEditPromptID = id
+        }
+    }
+
+    func promptProfiles(for mode: PromptMode) -> [DictationPromptProfile] {
+        let target = mode.normalized
+        return self.dictationPromptProfiles.filter { $0.mode.normalized == target }
+    }
+
+    func selectedPromptProfile(for mode: PromptMode) -> DictationPromptProfile? {
+        guard let id = self.selectedPromptID(for: mode) else { return nil }
+        let target = mode.normalized
+        return self.dictationPromptProfiles.first(where: { $0.id == id && $0.mode.normalized == target })
     }
 
     /// Optional override for the built-in default dictation system prompt.
@@ -210,6 +370,67 @@ final class SettingsStore: ObservableObject {
             } else {
                 self.defaults.removeObject(forKey: Keys.defaultDictationPromptOverride)
             }
+        }
+    }
+
+    /// Optional override for the built-in default edit system prompt.
+    var defaultEditPromptOverride: String? {
+        get {
+            if self.defaults.object(forKey: Keys.defaultEditPromptOverride) != nil {
+                return self.defaults.string(forKey: Keys.defaultEditPromptOverride) ?? ""
+            }
+            if self.defaults.object(forKey: Keys.defaultRewritePromptOverride) != nil {
+                return self.defaults.string(forKey: Keys.defaultRewritePromptOverride) ?? ""
+            }
+            if self.defaults.object(forKey: Keys.defaultWritePromptOverride) != nil {
+                return self.defaults.string(forKey: Keys.defaultWritePromptOverride) ?? ""
+            }
+            return nil
+        }
+        set {
+            objectWillChange.send()
+            if let value = newValue {
+                self.defaults.set(value, forKey: Keys.defaultEditPromptOverride)
+            } else {
+                self.defaults.removeObject(forKey: Keys.defaultEditPromptOverride)
+            }
+            // Normalize to the new key only.
+            self.defaults.removeObject(forKey: Keys.defaultWritePromptOverride)
+            self.defaults.removeObject(forKey: Keys.defaultRewritePromptOverride)
+        }
+    }
+
+    /// Legacy alias retained for compatibility.
+    var defaultWritePromptOverride: String? {
+        get { self.defaultEditPromptOverride }
+        set { self.defaultEditPromptOverride = newValue }
+    }
+
+    /// Legacy alias retained for compatibility.
+    var defaultRewritePromptOverride: String? {
+        get { self.defaultEditPromptOverride }
+        set { self.defaultEditPromptOverride = newValue }
+    }
+
+    func defaultPromptOverride(for mode: PromptMode) -> String? {
+        switch mode.normalized {
+        case .dictate:
+            return self.defaultDictationPromptOverride
+        case .edit:
+            return self.defaultEditPromptOverride
+        case .write, .rewrite:
+            return self.defaultEditPromptOverride
+        }
+    }
+
+    func setDefaultPromptOverride(_ value: String?, for mode: PromptMode) {
+        switch mode.normalized {
+        case .dictate:
+            self.defaultDictationPromptOverride = value
+        case .edit:
+            self.defaultEditPromptOverride = value
+        case .write, .rewrite:
+            self.defaultEditPromptOverride = value
         }
     }
 
@@ -239,6 +460,36 @@ final class SettingsStore: ObservableObject {
         """
     }
 
+    /// Hidden base prompt for edit mode (role/intent only).
+    static func baseEditPromptText() -> String {
+        """
+        You are a helpful writing assistant. The user may ask you to write new text or edit selected text.
+
+        Output ONLY what the user requested. Do not add explanations or preamble.
+        """
+    }
+
+    /// Legacy wrappers retained for compatibility.
+    static func baseWritePromptText() -> String {
+        self.baseEditPromptText()
+    }
+
+    /// Legacy wrappers retained for compatibility.
+    static func baseRewritePromptText() -> String {
+        self.baseEditPromptText()
+    }
+
+    static func basePromptText(for mode: PromptMode) -> String {
+        switch mode.normalized {
+        case .dictate:
+            return self.baseDictationPromptText()
+        case .edit:
+            return self.baseEditPromptText()
+        case .write, .rewrite:
+            return self.baseEditPromptText()
+        }
+    }
+
     /// Built-in default dictation prompt body that users may view/edit.
     static func defaultDictationPromptBodyText() -> String {
         """
@@ -262,9 +513,52 @@ final class SettingsStore: ObservableObject {
         """
     }
 
+    /// Built-in default edit prompt body.
+    static func defaultEditPromptBodyText() -> String {
+        """
+        Your job:
+        - If the user asks for new content, write it directly.
+        - If selected context is provided, apply the instruction to that context.
+        - Preserve intent and requested tone/style/format.
+        - Output only the final text, without explanations.
+
+        Example requests:
+        - "Write an email to my boss asking for time off"
+        - "Draft a reply saying I'll be there at 5"
+        - "Rewrite this to sound more professional"
+        - "Make this shorter and clearer"
+        """
+    }
+
+    /// Legacy wrappers retained for compatibility.
+    static func defaultWritePromptBodyText() -> String {
+        self.defaultEditPromptBodyText()
+    }
+
+    /// Legacy wrappers retained for compatibility.
+    static func defaultRewritePromptBodyText() -> String {
+        self.defaultEditPromptBodyText()
+    }
+
+    static func defaultPromptBodyText(for mode: PromptMode) -> String {
+        switch mode.normalized {
+        case .dictate:
+            return self.defaultDictationPromptBodyText()
+        case .edit:
+            return self.defaultEditPromptBodyText()
+        case .write, .rewrite:
+            return self.defaultEditPromptBodyText()
+        }
+    }
+
     /// Join hidden base with a body, avoiding duplicate base text.
     static func combineBasePrompt(with body: String) -> String {
-        let base = self.baseDictationPromptText().trimmingCharacters(in: .whitespacesAndNewlines)
+        self.combineBasePrompt(for: .dictate, with: body)
+    }
+
+    /// Join hidden base with a body for a given mode, avoiding duplicate base text.
+    static func combineBasePrompt(for mode: PromptMode, with body: String) -> String {
+        let base = self.basePromptText(for: mode).trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // If body already starts with base, return as-is to avoid double-prepending.
@@ -280,7 +574,12 @@ final class SettingsStore: ObservableObject {
 
     /// Remove the hidden base prompt prefix if it was persisted previously.
     static func stripBaseDictationPrompt(from text: String) -> String {
-        let base = self.baseDictationPromptText().trimmingCharacters(in: .whitespacesAndNewlines)
+        self.stripBasePrompt(for: .dictate, from: text)
+    }
+
+    /// Remove a hidden base prompt prefix for a given mode if it was persisted previously.
+    static func stripBasePrompt(for mode: PromptMode, from text: String) -> String {
+        let base = self.basePromptText(for: mode).trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Try exact and case-insensitive prefix removal
@@ -299,7 +598,60 @@ final class SettingsStore: ObservableObject {
 
     /// Built-in default dictation system prompt shared across the app.
     static func defaultDictationPromptText() -> String {
-        self.combineBasePrompt(with: self.defaultDictationPromptBodyText())
+        self.defaultSystemPromptText(for: .dictate)
+    }
+
+    static func defaultSystemPromptText(for mode: PromptMode) -> String {
+        self.combineBasePrompt(for: mode, with: self.defaultPromptBodyText(for: mode))
+    }
+
+    static func contextTemplateText() -> String {
+        """
+        Use the following selected context to improve your response:
+        {context}
+        """
+    }
+
+    static func runtimeContextBlock(context: String, template: String) -> String {
+        let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContext.isEmpty else { return "" }
+        if template.contains("{context}") {
+            return template.replacingOccurrences(of: "{context}", with: trimmedContext)
+        }
+        return "\(template)\n\(trimmedContext)"
+    }
+
+    func effectivePromptBody(for mode: PromptMode) -> String {
+        if let profile = self.selectedPromptProfile(for: mode) {
+            let body = Self.stripBasePrompt(for: mode, from: profile.prompt)
+            if !body.isEmpty {
+                return body
+            }
+        }
+
+        if let override = self.defaultPromptOverride(for: mode) {
+            return Self.stripBasePrompt(for: mode, from: override)
+        }
+
+        return Self.defaultPromptBodyText(for: mode)
+    }
+
+    func effectiveSystemPrompt(for mode: PromptMode) -> String {
+        if let profile = self.selectedPromptProfile(for: mode) {
+            let body = Self.stripBasePrompt(for: mode, from: profile.prompt)
+            if !body.isEmpty {
+                return Self.combineBasePrompt(for: mode, with: body)
+            }
+        }
+
+        if let override = self.defaultPromptOverride(for: mode) {
+            let trimmedOverride = override.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedOverride.isEmpty else { return override }
+            let body = Self.stripBasePrompt(for: mode, from: trimmedOverride)
+            return Self.combineBasePrompt(for: mode, with: body)
+        }
+
+        return Self.defaultSystemPromptText(for: mode)
     }
 
     // MARK: - Model Reasoning Configuration
@@ -1282,7 +1634,7 @@ final class SettingsStore: ObservableObject {
             self.customDictationPrompt = ""
             // If selection points to nowhere, reset to default to avoid confusion.
             if let id = self.selectedDictationPromptID,
-               self.dictationPromptProfiles.contains(where: { $0.id == id }) == false
+               self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode == .dictate }) == false
             {
                 self.selectedDictationPromptID = nil
             }
@@ -1299,6 +1651,51 @@ final class SettingsStore: ObservableObject {
         self.selectedDictationPromptID = profile.id
         self.customDictationPrompt = ""
         DebugLogger.shared.info("Migrated legacy custom dictation prompt to a prompt profile", source: "SettingsStore")
+    }
+
+    private func normalizePromptSelectionsIfNeeded() {
+        // One-time migration to unified edit keys.
+        if self.defaults.object(forKey: Keys.selectedEditPromptID) == nil,
+           let migratedSelectedEditID = self.selectedEditPromptID
+        {
+            self.defaults.set(migratedSelectedEditID, forKey: Keys.selectedEditPromptID)
+            self.defaults.removeObject(forKey: Keys.selectedWritePromptID)
+            self.defaults.removeObject(forKey: Keys.selectedRewritePromptID)
+        }
+
+        if self.defaults.object(forKey: Keys.defaultEditPromptOverride) == nil,
+           let migratedEditOverride = self.defaultEditPromptOverride
+        {
+            self.defaults.set(migratedEditOverride, forKey: Keys.defaultEditPromptOverride)
+            self.defaults.removeObject(forKey: Keys.defaultWritePromptOverride)
+            self.defaults.removeObject(forKey: Keys.defaultRewritePromptOverride)
+        }
+
+        // Persist profile mode normalization to the new user-facing modes.
+        var normalizedProfiles = self.dictationPromptProfiles
+        var didChangeProfiles = false
+        for idx in normalizedProfiles.indices {
+            let normalizedMode = normalizedProfiles[idx].mode.normalized
+            if normalizedProfiles[idx].mode != normalizedMode {
+                normalizedProfiles[idx].mode = normalizedMode
+                didChangeProfiles = true
+            }
+        }
+        if didChangeProfiles {
+            self.dictationPromptProfiles = normalizedProfiles
+        }
+
+        if let id = self.selectedDictationPromptID,
+           self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode == .dictate }) == false
+        {
+            self.selectedDictationPromptID = nil
+        }
+
+        if let id = self.selectedEditPromptID,
+           self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .edit }) == false
+        {
+            self.selectedEditPromptID = nil
+        }
     }
 
     private func scrubSavedProviderAPIKeys() {

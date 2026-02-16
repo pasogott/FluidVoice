@@ -25,43 +25,51 @@ extension AIEnhancementSettingsView {
                     Spacer()
                 }
 
-                // Dictation Prompts (multi-prompt system)
+                // Prompts (unified prompt system)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Dictation Prompts")
+                            Text("Prompts")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(self.theme.palette.primaryText)
-                            Text("Create multiple named system prompts for AI dictation cleanup. Select which one is active.")
+                            Text("Create mode-specific prompts for Dictate and Edit. Select which prompt is active per mode.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(self.theme.palette.secondaryText)
                         }
                         Spacer()
                         Button("+ Add Prompt") {
-                            self.viewModel.openNewPromptEditor()
+                            self.viewModel.openNewPromptEditor(prefillMode: .edit)
                         }
                         .buttonStyle(CompactButtonStyle(isReady: true))
                         .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
                     }
 
-                    // Default prompt card
+                    // Built-in default cards
                     self.promptProfileCard(
-                        title: "Default",
-                        subtitle: self.viewModel.promptPreview(
-                            self.settings.defaultDictationPromptOverride.map {
-                                SettingsStore.stripBaseDictationPrompt(from: $0)
-                            } ?? SettingsStore.defaultDictationPromptBodyText()
-                        ),
-                        isSelected: self.viewModel.selectedDictationPromptID == nil,
+                        title: "Default Dictate",
+                        subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: .dictate)),
+                        mode: .dictate,
+                        isSelected: self.viewModel.selectedPromptID(for: .dictate) == nil,
                         onUse: {
-                            self.settings.selectedDictationPromptID = nil
-                            self.viewModel.selectedDictationPromptID = nil
+                            self.viewModel.setSelectedPromptID(nil, for: .dictate)
                         },
-                        onOpen: { self.viewModel.openDefaultPromptViewer() }
+                        onOpen: { self.viewModel.openDefaultPromptViewer(for: .dictate) }
+                    )
+
+                    self.promptProfileCard(
+                        title: "Default Edit",
+                        subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: .edit)),
+                        mode: .edit,
+                        isSelected: self.viewModel.selectedPromptID(for: .edit) == nil,
+                        onUse: {
+                            self.viewModel.setSelectedPromptID(nil, for: .edit)
+                        },
+                        onOpen: { self.viewModel.openDefaultPromptViewer(for: .edit) }
                     )
 
                     // User prompt cards
                     let profiles = self.viewModel.dictationPromptProfiles
+                        .filter { SettingsStore.PromptMode.visiblePromptModes.contains($0.mode.normalized) }
                     if profiles.isEmpty {
                         Text("No custom prompts yet. Click “+ Add Prompt” to create one.")
                             .font(.caption)
@@ -71,13 +79,14 @@ extension AIEnhancementSettingsView {
                         ForEach(profiles) { profile in
                             self.promptProfileCard(
                                 title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
-                                subtitle: profile.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                subtitle: SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt).isEmpty
                                     ? "Empty prompt (uses Default)"
-                                    : self.viewModel.promptPreview(SettingsStore.stripBaseDictationPrompt(from: profile.prompt)),
-                                isSelected: self.viewModel.selectedDictationPromptID == profile.id,
+                                    : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
+                                mode: profile.mode,
+                                showContextBadge: profile.includeContext,
+                                isSelected: self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
                                 onUse: {
-                                    self.settings.selectedDictationPromptID = profile.id
-                                    self.viewModel.selectedDictationPromptID = profile.id
+                                    self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
                                 },
                                 onOpen: { self.viewModel.openEditor(for: profile) },
                                 onDelete: { self.viewModel.requestDeletePrompt(profile) }
@@ -97,6 +106,8 @@ extension AIEnhancementSettingsView {
     func promptProfileCard(
         title: String,
         subtitle: String,
+        mode: SettingsStore.PromptMode,
+        showContextBadge: Bool = false,
         isSelected: Bool,
         onUse: @escaping () -> Void,
         onOpen: @escaping () -> Void,
@@ -109,6 +120,26 @@ extension AIEnhancementSettingsView {
                         Text(title)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(self.theme.palette.primaryText)
+                        Text(mode.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(self.theme.palette.cardBorder.opacity(0.3))
+                            )
+                            .foregroundStyle(self.theme.palette.secondaryText)
+                        if showContextBadge {
+                            Text("Uses {context}")
+                                .font(.caption2)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(self.theme.palette.accent.opacity(0.16))
+                                )
+                                .foregroundStyle(self.theme.palette.accent)
+                        }
                         if isSelected {
                             Text("Active")
                                 .font(.caption2)
@@ -164,20 +195,33 @@ extension AIEnhancementSettingsView {
                 VStack(alignment: .leading, spacing: 2) {
                     Text({
                         switch mode {
-                        case .defaultPrompt: return "Default Dictation Prompt"
-                        case .newPrompt: return "New Dictation Prompt"
-                        case .edit: return "Edit Dictation Prompt"
+                        case let .defaultPrompt(promptMode): return "Default \(promptMode.displayName) Prompt"
+                        case let .newPrompt(prefillMode): return "New \(prefillMode.displayName) Prompt"
+                        case .edit: return "Edit Prompt"
                         }
                     }())
                         .font(.headline)
                     Text(mode.isDefault
                         ? "This is the built-in prompt. Create a custom prompt to override it."
-                        : "Name and prompt text are used as the system prompt for dictation cleanup."
+                        : "Prompt text is appended to the hidden base prompt for the selected mode."
                     )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
                 Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Mode")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Picker("Mode", selection: self.$viewModel.draftPromptMode) {
+                    ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(mode.isDefault)
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -210,14 +254,41 @@ extension AIEnhancementSettingsView {
                         )
                 )
                 .onChange(of: self.viewModel.draftPromptText) { _, newValue in
-                    let combined = self.viewModel.combinedDraftPrompt(newValue)
+                    guard self.viewModel.draftPromptMode == .dictate else { return }
+                    let combined = self.viewModel.combinedDraftPrompt(newValue, mode: self.viewModel.draftPromptMode)
                     self.promptTest.updateDraftPromptText(combined)
+                }
+            }
+
+            if self.viewModel.draftPromptMode != .dictate {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Include selected text context", isOn: self.$viewModel.draftIncludeContext)
+                        .toggleStyle(.switch)
+                        .disabled(mode.isDefault)
+
+                    Text("Template added when enabled:")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Text(SettingsStore.contextTemplateText())
+                        .font(.system(.caption2, design: .monospaced))
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(self.theme.palette.contentBackground.opacity(0.7))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                                )
+                        )
                 }
             }
 
             // MARK: - Test Mode
 
-            VStack(alignment: .leading, spacing: 8) {
+            if self.viewModel.draftPromptMode == .dictate {
+                VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Image(systemName: "waveform")
                         .foregroundStyle(self.theme.palette.accent)
@@ -234,7 +305,7 @@ extension AIEnhancementSettingsView {
                     get: { self.promptTest.isActive },
                     set: { enabled in
                         if enabled {
-                            let combined = self.viewModel.combinedDraftPrompt(self.viewModel.draftPromptText)
+                            let combined = self.viewModel.combinedDraftPrompt(self.viewModel.draftPromptText, mode: self.viewModel.draftPromptMode)
                             self.promptTest.activate(draftPromptText: combined)
                         } else {
                             self.promptTest.deactivate()
@@ -326,6 +397,12 @@ extension AIEnhancementSettingsView {
                             .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
                     )
             )
+            } else if self.promptTest.isActive {
+                Text("Prompt test mode is available only for Dictate prompts.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .onAppear { self.promptTest.deactivate() }
+            }
 
             HStack(spacing: 10) {
                 Button(mode.isDefault ? "Close" : "Cancel") {
@@ -368,12 +445,12 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    func openDefaultPromptViewer() {
-        self.viewModel.openDefaultPromptViewer()
+    func openDefaultPromptViewer(for mode: SettingsStore.PromptMode) {
+        self.viewModel.openDefaultPromptViewer(for: mode)
     }
 
-    func openNewPromptEditor() {
-        self.viewModel.openNewPromptEditor()
+    func openNewPromptEditor(prefillMode: SettingsStore.PromptMode = .edit) {
+        self.viewModel.openNewPromptEditor(prefillMode: prefillMode)
     }
 
     func openEditor(for profile: SettingsStore.DictationPromptProfile) {

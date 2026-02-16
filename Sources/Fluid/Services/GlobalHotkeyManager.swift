@@ -1,27 +1,33 @@
 import AppKit
 import Foundation
 
+private enum HotkeyHoldModeType {
+    case transcription
+    case commandMode
+    case rewriteMode
+}
+
+private final class HotkeyState: @unchecked Sendable {
+    private let lock = NSLock()
+    var isKeyPressed = false
+    var isCommandModeKeyPressed = false
+    var isRewriteKeyPressed = false
+    var modifierOnlyKeyDown = false
+    var otherKeyPressedDuringModifier = false
+    var modifierPressStartTime: Date?
+    var pendingHoldModeStart: Task<Void, Never>?
+    var pendingHoldModeType: HotkeyHoldModeType?
+
+    func withLock<T>(_ block: () -> T) -> T {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return block()
+    }
+}
+
 @MainActor
 final class GlobalHotkeyManager: NSObject {
-    private final class HotkeyState: @unchecked Sendable {
-        private let lock = NSLock()
-        var isKeyPressed = false
-        var isCommandModeKeyPressed = false
-        var isRewriteKeyPressed = false
-        var modifierOnlyKeyDown = false
-        var otherKeyPressedDuringModifier = false
-        var modifierPressStartTime: Date?
-        var pendingHoldModeStart: Task<Void, Never>?
-        var pendingHoldModeType: HoldModeType?
-
-        func withLock<T>(_ block: () -> T) -> T {
-            self.lock.lock()
-            defer { self.lock.unlock() }
-            return block()
-        }
-    }
-
-    private let state = HotkeyState()
+    private nonisolated(unsafe) var state = HotkeyState()
     private nonisolated(unsafe) var eventTap: CFMachPort?
     private nonisolated(unsafe) var runLoopSource: CFRunLoopSource?
     private let asrService: ASRService
@@ -75,15 +81,9 @@ final class GlobalHotkeyManager: NSObject {
     }
 
     // Tracks which mode's pending start is active (for cancellation on key combos)
-    private nonisolated var pendingHoldModeType: HoldModeType? {
+    private nonisolated var pendingHoldModeType: HotkeyHoldModeType? {
         get { self.state.withLock { self.state.pendingHoldModeType } }
         set { self.state.withLock { self.state.pendingHoldModeType = newValue } }
-    }
-
-    private enum HoldModeType {
-        case transcription
-        case commandMode
-        case rewriteMode
     }
 
     // Busy flag to prevent race conditions during stop processing
@@ -839,7 +839,5 @@ final class GlobalHotkeyManager: NSObject {
         initializationTask?.cancel()
         healthCheckTask?.cancel()
         cleanupEventTap()
-
-        DebugLogger.shared.info("Deinitialized and cleaned up", source: "GlobalHotkeyManager")
     }
 }

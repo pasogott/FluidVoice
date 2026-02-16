@@ -39,6 +39,11 @@ final class BottomOverlayWindowController {
 
         // Update mode in content state
         NotchContentState.shared.mode = mode
+        switch mode {
+        case .dictation: NotchContentState.shared.promptPickerMode = .dictate
+        case .edit, .write, .rewrite: NotchContentState.shared.promptPickerMode = .edit
+        case .command: break
+        }
         NotchContentState.shared.updateTranscription("")
         NotchContentState.shared.bottomOverlayAudioLevel = 0
 
@@ -88,8 +93,8 @@ final class BottomOverlayWindowController {
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             window.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            self?.window?.orderOut(nil)
+        } completionHandler: {
+            window.orderOut(nil)
         }
     }
 
@@ -452,6 +457,7 @@ final class BottomOverlayPromptMenuController {
 
 private struct BottomOverlayPromptMenuView: View {
     @ObservedObject private var settings = SettingsStore.shared
+    @ObservedObject private var contentState = NotchContentState.shared
 
     let maxWidth: CGFloat
     let onHoverChanged: (Bool) -> Void
@@ -459,15 +465,38 @@ private struct BottomOverlayPromptMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                ForEach(SettingsStore.PromptMode.visiblePromptModes, id: \.rawValue) { mode in
+                    Button(action: {
+                        let normalizedMode = mode.normalized
+                        if !self.contentState.isProcessing {
+                            self.contentState.onPromptModeSwitchRequested?(normalizedMode)
+                        }
+                        self.contentState.promptPickerMode = normalizedMode
+                    }) {
+                        Text(mode.displayName)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(self.contentState.promptPickerMode == mode ? Color.white.opacity(0.18) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 6)
+
             Button(action: {
-                self.settings.selectedDictationPromptID = nil
+                self.settings.setSelectedPromptID(nil, for: self.contentState.promptPickerMode)
                 self.restoreTypingTargetApp()
                 self.onDismissRequested()
             }) {
                 HStack {
                     Text("Default")
                     Spacer()
-                    if self.settings.selectedDictationPromptID == nil {
+                    if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == nil {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .semibold))
                     }
@@ -476,20 +505,20 @@ private struct BottomOverlayPromptMenuView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 4)
 
-            if !self.settings.dictationPromptProfiles.isEmpty {
+            if !self.settings.promptProfiles(for: self.contentState.promptPickerMode).isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 
-                ForEach(self.settings.dictationPromptProfiles) { profile in
+                ForEach(self.settings.promptProfiles(for: self.contentState.promptPickerMode)) { profile in
                     Button(action: {
-                        self.settings.selectedDictationPromptID = profile.id
+                        self.settings.setSelectedPromptID(profile.id, for: self.contentState.promptPickerMode)
                         self.restoreTypingTargetApp()
                         self.onDismissRequested()
                     }) {
                         HStack {
                             Text(profile.name.isEmpty ? "Untitled" : profile.name)
                             Spacer()
-                            if self.settings.selectedDictationPromptID == profile.id {
+                            if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == profile.id {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 10, weight: .semibold))
                             }
@@ -520,6 +549,7 @@ private struct BottomOverlayPromptMenuView: View {
             if let pid { _ = TypingService.activateApp(pid: pid) }
         }
     }
+
 }
 
 private struct PromptSelectorAnchorReader: NSViewRepresentable {
@@ -703,8 +733,7 @@ struct BottomOverlayView: View {
     private var modeLabel: String {
         switch self.contentState.mode {
         case .dictation: return "Dictate"
-        case .rewrite: return "Rewrite"
-        case .write: return "Write"
+        case .edit, .rewrite, .write: return "Edit"
         case .command: return "Command"
         }
     }
@@ -712,8 +741,7 @@ struct BottomOverlayView: View {
     private var processingLabel: String {
         switch self.contentState.mode {
         case .dictation: return "Refining..."
-        case .rewrite: return "Thinking..."
-        case .write: return "Thinking..."
+        case .edit, .rewrite, .write: return "Thinking..."
         case .command: return "Working..."
         }
     }
@@ -729,12 +757,15 @@ struct BottomOverlayView: View {
         !self.contentState.transcriptionText.isEmpty
     }
 
-    private var isDictationMode: Bool {
-        self.contentState.mode == .dictation
+    private var isPromptSelectableMode: Bool {
+        self.contentState.mode == .dictation ||
+            self.contentState.mode == .edit ||
+            self.contentState.mode == .write ||
+            self.contentState.mode == .rewrite
     }
 
     private var selectedPromptLabel: String {
-        if let profile = self.settings.selectedDictationPromptProfile {
+        if let profile = self.settings.selectedPromptProfile(for: self.contentState.promptPickerMode) {
             let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? "Untitled" : name
         }
@@ -782,7 +813,7 @@ struct BottomOverlayView: View {
     }
 
     private func handlePromptSelectorHover(_ hovering: Bool) {
-        guard self.isDictationMode, !self.contentState.isProcessing else {
+        guard self.isPromptSelectableMode, !self.contentState.isProcessing else {
             BottomOverlayPromptMenuController.shared.hide()
             return
         }
@@ -790,7 +821,7 @@ struct BottomOverlayView: View {
     }
 
     private func handlePromptSelectorFrameChange(_ frameInScreen: CGRect, window: NSWindow?) {
-        guard self.isDictationMode, !self.contentState.isProcessing else {
+        guard self.isPromptSelectableMode, !self.contentState.isProcessing else {
             BottomOverlayPromptMenuController.shared.hide()
             return
         }
@@ -851,11 +882,15 @@ struct BottomOverlayView: View {
             .onHover { hovering in
                 self.handlePromptSelectorHover(hovering)
             }
+            .onTapGesture {
+                guard self.isPromptSelectableMode, !self.contentState.isProcessing else { return }
+                BottomOverlayPromptMenuController.shared.selectorHoverChanged(true)
+            }
     }
 
     var body: some View {
         VStack(spacing: max(4, self.layout.vPadding / 2)) {
-            if self.isDictationMode && !self.contentState.isProcessing {
+            if self.isPromptSelectableMode && !self.contentState.isProcessing {
                 self.promptSelectorView
             }
 
@@ -935,6 +970,13 @@ struct BottomOverlayView: View {
                             .foregroundStyle(self.modeColor)
                             .lineLimit(1)
                             .fixedSize(horizontal: true, vertical: false)
+                            .onHover { hovering in
+                                self.handlePromptSelectorHover(hovering)
+                            }
+                            .onTapGesture {
+                                guard self.isPromptSelectableMode, !self.contentState.isProcessing else { return }
+                                BottomOverlayPromptMenuController.shared.selectorHoverChanged(true)
+                            }
 
                         if !self.appServices.asr.isAsrReady &&
                             (self.appServices.asr.isLoadingModel || self.appServices.asr.isDownloadingModel)
@@ -975,8 +1017,13 @@ struct BottomOverlayView: View {
             BottomOverlayWindowController.shared.refreshSizeForContent()
         }
         .onChange(of: self.contentState.mode) { _, _ in
-            if !self.isDictationMode || self.contentState.isProcessing {
+            if !self.isPromptSelectableMode || self.contentState.isProcessing {
                 self.closePromptMenu()
+            }
+            switch self.contentState.mode {
+            case .dictation: self.contentState.promptPickerMode = .dictate
+            case .edit, .write, .rewrite: self.contentState.promptPickerMode = .edit
+            case .command: break
             }
             BottomOverlayWindowController.shared.refreshSizeForContent()
         }
