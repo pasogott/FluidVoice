@@ -147,101 +147,138 @@ extension VoiceEngineSettingsView {
     /// Stats panel showing speed/accuracy bars that animate when model changes
     var modelStatsPanel: some View {
         let model = self.viewModel.previewSpeechModel
+        let supportsParakeetCustomWords = model == .parakeetTDT || model == .parakeetTDTv2
 
-        return HStack(alignment: .center, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(model.humanReadableName)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(self.theme.palette.primaryText)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(model.humanReadableName)
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(self.theme.palette.primaryText)
 
-                        if let badge = model.badgeText {
-                            Text(badge)
+                            if let badge = model.badgeText {
+                                Text(badge)
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(badge == "FluidVoice Pick" ? .cyan.opacity(0.2) : .orange.opacity(0.2)))
+                                    .foregroundStyle(badge == "FluidVoice Pick" ? .cyan : .orange)
+                            }
+
+                            Spacer()
+                        }
+
+                        Text(model.cardDescription)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    HStack(spacing: 8) {
+                        Label(model.downloadSize, systemImage: "internaldrive")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+
+                        if model.requiresAppleSilicon {
+                            Text("Apple Silicon")
                                 .font(.caption2)
-                                .fontWeight(.semibold)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(badge == "FluidVoice Pick" ? .cyan.opacity(0.2) : .orange.opacity(0.2)))
-                                .foregroundStyle(badge == "FluidVoice Pick" ? .cyan : .orange)
+                                .background(Capsule().fill(self.theme.palette.accent.opacity(0.2)))
+                                .foregroundStyle(self.theme.palette.accent)
                         }
+
+                        Text(model.languageSupport)
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(.quaternary))
+                            .foregroundStyle(.secondary)
 
                         Spacer()
                     }
 
-                    Text(model.cardDescription)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-
-                HStack(spacing: 8) {
-                    Label(model.downloadSize, systemImage: "internaldrive")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    if model.requiresAppleSilicon {
-                        Text("Apple Silicon")
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(self.theme.palette.accent.opacity(0.2)))
-                            .foregroundStyle(self.theme.palette.accent)
+                    // Memory warning for large models
+                    if let memoryWarning = model.memoryWarning {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                            Text(memoryWarning)
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(.orange.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(.orange.opacity(0.3), lineWidth: 1)
+                                )
+                        )
                     }
-
-                    Text(model.languageSupport)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Capsule().fill(.quaternary))
-                        .foregroundStyle(.secondary)
-
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Memory warning for large models
-                if let memoryWarning = model.memoryWarning {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                        Text(memoryWarning)
-                            .font(.caption2)
-                            .foregroundStyle(.orange)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(.orange.opacity(0.1))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(.orange.opacity(0.3), lineWidth: 1)
-                            )
+                HStack(spacing: 16) {
+                    LiquidBar(
+                        fillPercent: model.speedPercent,
+                        color: .yellow,
+                        secondaryColor: .orange,
+                        icon: "bolt.fill",
+                        label: "Speed"
+                    )
+
+                    LiquidBar(
+                        fillPercent: model.accuracyPercent,
+                        color: Color.fluidGreen,
+                        secondaryColor: .cyan,
+                        icon: "target",
+                        label: "Accuracy"
                     )
                 }
+                .frame(width: 140, alignment: .center)
+                .animation(.spring(response: 0.5, dampingFraction: 0.7), value: model.id)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 16) {
-                LiquidBar(
-                    fillPercent: model.speedPercent,
-                    color: .yellow,
-                    secondaryColor: .orange,
-                    icon: "bolt.fill",
-                    label: "Speed"
-                )
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: supportsParakeetCustomWords ? "checkmark.seal.fill" : "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(Color.fluidGreen)
 
-                LiquidBar(
-                    fillPercent: model.accuracyPercent,
-                    color: Color.fluidGreen,
-                    secondaryColor: .cyan,
-                    icon: "target",
-                    label: "Accuracy"
+                Text(
+                    supportsParakeetCustomWords
+                        ? "Custom Words supported on Parakeet. Teach names, product terms, and uncommon words for better accuracy."
+                        : "Custom Words are available on Parakeet models. Switch to Parakeet to teach names, product terms, and uncommon words."
                 )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+
+                Spacer(minLength: 8)
+
+                Button("Open Custom Dictionary") {
+                    NotificationCenter.default.post(name: .openCustomDictionaryFromVoiceEngine, object: nil)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.fluidGreen)
+                .controlSize(.small)
             }
-            .frame(width: 140, alignment: .center)
-            .animation(.spring(response: 0.5, dampingFraction: 0.7), value: model.id)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.fluidGreen.opacity(0.10))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.fluidGreen.opacity(0.30), lineWidth: 1)
+                    )
+            )
         }
         .padding(.vertical, 6)
     }
@@ -544,4 +581,8 @@ extension VoiceEngineSettingsView {
         }
         return nil
     }
+}
+
+extension Notification.Name {
+    static let openCustomDictionaryFromVoiceEngine = Notification.Name("OpenCustomDictionaryFromVoiceEngine")
 }

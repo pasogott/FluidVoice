@@ -547,6 +547,9 @@ struct ContentView: View {
                 self.accessibilityEnabled = trusted
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openCustomDictionaryFromVoiceEngine)) { _ in
+            self.selectedSidebarItem = .customDictionary
+        }
         .overlay(alignment: .center) {}
         .alert(
             self.asr.errorTitle,
