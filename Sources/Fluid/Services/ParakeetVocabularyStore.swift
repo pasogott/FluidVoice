@@ -105,6 +105,54 @@ final class ParakeetVocabularyStore {
         NotificationCenter.default.post(name: .parakeetVocabularyDidChange, object: nil)
     }
 
+    /// Loads only the user-managed boost terms from storage.
+    /// Tuning parameters remain backend-managed defaults unless explicitly present in the file.
+    func loadUserBoostTerms() throws -> [VocabularyConfig.Term] {
+        let rawJSON = try self.loadRawJSON()
+        let parsed = (try? self.validateJSON(rawJSON)) ?? VocabularyConfig(
+            alpha: nil,
+            minCtcScore: nil,
+            minSimilarity: nil,
+            minCombinedConfidence: nil,
+            minTermLength: nil,
+            terms: []
+        )
+        return Self.normalizeUserTerms(parsed.terms, maxTerms: Defaults.maxTerms)
+    }
+
+    /// Saves user-managed boost terms while preserving or defaulting backend tuning parameters.
+    func saveUserBoostTerms(_ terms: [VocabularyConfig.Term]) throws {
+        let normalizedTerms = Self.normalizeUserTerms(terms, maxTerms: Defaults.maxTerms)
+        let existingRawJSON = (try? self.loadRawJSON()) ?? Self.defaultTemplateJSON()
+        let existing = (try? self.validateJSON(existingRawJSON)) ?? VocabularyConfig(
+            alpha: nil,
+            minCtcScore: nil,
+            minSimilarity: nil,
+            minCombinedConfidence: nil,
+            minTermLength: nil,
+            terms: []
+        )
+        let config = VocabularyConfig(
+            alpha: existing.alpha ?? Defaults.alpha,
+            minCtcScore: existing.minCtcScore ?? Defaults.minCtcScore,
+            minSimilarity: existing.minSimilarity ?? Defaults.minSimilarity,
+            minCombinedConfidence: existing.minCombinedConfidence ?? Defaults.minCombinedConfidence,
+            minTermLength: existing.minTermLength ?? Defaults.minTermLength,
+            terms: normalizedTerms
+        )
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(config)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw StoreError.invalidJSON("Failed to encode boost terms.")
+        }
+
+        let url = try self.ensureVocabularyFileExists()
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        NotificationCenter.default.post(name: .parakeetVocabularyDidChange, object: nil)
+    }
+
     func hasAnyBoostTerms() -> Bool {
         (try? self.loadResolvedConfig())?.terms.isEmpty == false
     }
@@ -186,6 +234,41 @@ final class ParakeetVocabularyStore {
         return mergedByText.values.sorted { lhs, rhs in
             lhs.text.localizedCaseInsensitiveCompare(rhs.text) == .orderedAscending
         }
+    }
+
+    private static func normalizeUserTerms(_ terms: [VocabularyConfig.Term], maxTerms: Int) -> [VocabularyConfig.Term] {
+        var seen: Set<String> = []
+        var normalized: [VocabularyConfig.Term] = []
+        normalized.reserveCapacity(min(terms.count, maxTerms))
+
+        for term in terms {
+            let text = term.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+
+            let key = text.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+
+            let aliases = (term.aliases ?? [])
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .filter { $0.caseInsensitiveCompare(text) != .orderedSame }
+
+            let dedupedAliases = Array(Set(aliases.map { $0.lowercased() })).sorted()
+            normalized.append(
+                VocabularyConfig.Term(
+                    text: text,
+                    weight: term.weight,
+                    aliases: dedupedAliases.isEmpty ? nil : dedupedAliases
+                )
+            )
+
+            if normalized.count >= maxTerms {
+                break
+            }
+        }
+
+        return normalized
     }
 
     static func defaultTemplateJSON() -> String {
