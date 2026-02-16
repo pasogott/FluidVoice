@@ -67,8 +67,6 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
             models = models.filter { $0.provider == .apple }
         case .openai:
             models = models.filter { $0.provider == .openai }
-        case .qwen:
-            models = models.filter { $0.provider == .qwen }
         }
 
         if self.englishOnlyFilter {

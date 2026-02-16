@@ -1946,6 +1946,10 @@ final class SettingsStore: ObservableObject {
     /// Unified speech recognition model selection.
     /// Replaces the old TranscriptionProviderOption + WhisperModelSize dual-setting.
     enum SpeechModel: String, CaseIterable, Identifiable, Codable {
+        // Temporarily disabled in UI/runtime while Parakeet word boosting work is prioritized.
+        // Flip to `true` in a future round to re-enable Qwen without deleting implementation.
+        static let qwenPreviewEnabled = false
+
         // MARK: - FluidAudio Models (Apple Silicon Only)
 
         case parakeetTDT = "parakeet-tdt"
@@ -2076,6 +2080,9 @@ final class SettingsStore: ObservableObject {
         static var availableModels: [SpeechModel] {
             allCases.filter { model in
                 if model == .whisperLargeTurbo {
+                    return false
+                }
+                if model == .qwen3Asr, !Self.qwenPreviewEnabled {
                     return false
                 }
                 // Filter by Apple Silicon requirement
@@ -2500,6 +2507,10 @@ final class SettingsStore: ObservableObject {
             if let rawValue = defaults.string(forKey: Keys.selectedSpeechModel),
                let model = SpeechModel(rawValue: rawValue)
             {
+                // If Qwen was previously selected, transparently fall back while preview is disabled.
+                if model == .qwen3Asr, !SpeechModel.qwenPreviewEnabled {
+                    return SpeechModel.defaultModel
+                }
                 // Validate model is available on this architecture
                 if model.requiresAppleSilicon && !CPUArchitecture.isAppleSilicon {
                     return .whisperBase
