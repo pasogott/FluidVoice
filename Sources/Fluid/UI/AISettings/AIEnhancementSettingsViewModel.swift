@@ -1294,6 +1294,14 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.selectedEditPromptID = self.settings.selectedEditPromptID
     }
 
+    func hasDefaultPromptOverride(for mode: SettingsStore.PromptMode) -> Bool {
+        self.settings.defaultPromptOverride(for: mode.normalized) != nil
+    }
+
+    func resetDefaultPromptOverride(for mode: SettingsStore.PromptMode) {
+        self.settings.setDefaultPromptOverride(nil, for: mode.normalized)
+    }
+
     func defaultPromptBodyPreview(for mode: SettingsStore.PromptMode) -> String {
         if let override = self.settings.defaultPromptOverride(for: mode) {
             return SettingsStore.stripBasePrompt(for: mode, from: override)

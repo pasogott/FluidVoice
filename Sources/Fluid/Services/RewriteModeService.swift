@@ -15,6 +15,13 @@ final class RewriteModeService: ObservableObject {
     private let textSelectionService = TextSelectionService.shared
     private let typingService = TypingService()
     private var thinkingBuffer: [String] = [] // Buffer thinking tokens
+    private var forcePromptTraceToConsole: Bool {
+        ProcessInfo.processInfo.environment["FLUID_PROMPT_TRACE"] == "1"
+    }
+    private var shouldTracePromptProcessing: Bool {
+        self.forcePromptTraceToConsole ||
+            UserDefaults.standard.bool(forKey: "EnableDebugLogs")
+    }
 
     struct Message: Identifiable, Equatable {
         let id = UUID()
@@ -34,6 +41,9 @@ final class RewriteModeService: ObservableObject {
             self.rewrittenText = ""
             self.conversationHistory = []
             self.isWriteMode = false
+            if self.shouldTracePromptProcessing {
+                self.logPromptTrace("Captured selected context", value: text)
+            }
             return true
         }
         return false
@@ -46,6 +56,9 @@ final class RewriteModeService: ObservableObject {
         self.rewrittenText = ""
         self.conversationHistory = []
         self.isWriteMode = true
+        if self.shouldTracePromptProcessing {
+            self.logPromptTrace("Starting edit with no selected context", value: "<empty>")
+        }
     }
 
     /// Set the original text directly (from voice input when no text was selected)
@@ -154,13 +167,25 @@ final class RewriteModeService: ObservableObject {
     private func callLLM(messages: [Message], isWriteMode: Bool) async throws -> String {
         let settings = SettingsStore.shared
         let promptMode: SettingsStore.PromptMode = .edit
+        let selectedProfile = settings.selectedPromptProfile(for: promptMode)
+        let selectedPromptName: String = {
+            if let profile = selectedProfile {
+                return profile.name.isEmpty ? "Untitled Prompt" : profile.name
+            }
+            return "Default Edit"
+        }()
+        let promptBody = settings.effectivePromptBody(for: promptMode)
+        let builtInDefaultPrompt = SettingsStore.defaultSystemPromptText(for: promptMode)
+        let systemPromptBeforeContext = settings.effectiveSystemPrompt(for: promptMode)
         // Use Edit Mode's independent provider/model settings (backed by legacy rewriteMode settings keys)
         let providerID = settings.rewriteModeSelectedProviderID
 
-        var systemPrompt = settings.effectiveSystemPrompt(for: promptMode)
+        var systemPrompt = systemPromptBeforeContext
         let includeContext = settings.selectedPromptProfile(for: promptMode)?.includeContext ?? true
+        let contextText = self.selectedContextText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var contextBlock = ""
         if includeContext {
-            let contextBlock = SettingsStore.runtimeContextBlock(
+            contextBlock = SettingsStore.runtimeContextBlock(
                 context: self.selectedContextText,
                 template: SettingsStore.contextTemplateText()
             )
@@ -168,6 +193,22 @@ final class RewriteModeService: ObservableObject {
                 systemPrompt = "\(systemPrompt)\n\n\(contextBlock)"
                 DebugLogger.shared.debug("Injected selected-text context into \(promptMode.rawValue) prompt", source: "RewriteModeService")
             }
+        }
+
+        if self.shouldTracePromptProcessing {
+            let messageDump = messages.map {
+                let role = ($0.role == .user) ? "user" : "assistant"
+                return "[\(role)]\n\($0.content)"
+            }.joined(separator: "\n\n")
+            self.logPromptTrace("Mode", value: isWriteMode ? "Edit (write)" : "Edit (rewrite)")
+            self.logPromptTrace("Selected prompt profile", value: selectedPromptName)
+            self.logPromptTrace("Prompt body (custom/default body)", value: promptBody)
+            self.logPromptTrace("Built-in default system prompt (baseline)", value: builtInDefaultPrompt)
+            self.logPromptTrace("System prompt before context", value: systemPromptBeforeContext)
+            self.logPromptTrace("Selected context text", value: contextText.isEmpty ? "<empty>" : contextText)
+            self.logPromptTrace("Context block injected", value: contextBlock.isEmpty ? "<none>" : contextBlock)
+            self.logPromptTrace("Final system prompt sent to model", value: systemPrompt)
+            self.logPromptTrace("Conversation input (Q/history)", value: messageDump.isEmpty ? "<empty>" : messageDump)
         }
 
         // Route to Apple Intelligence if selected
@@ -178,7 +219,11 @@ final class RewriteModeService: ObservableObject {
                 let messageTuples = messages
                     .map { (role: $0.role == .user ? "user" : "assistant", content: $0.content) }
                 DebugLogger.shared.debug("Using Apple Intelligence for edit mode", source: "RewriteModeService")
-                return try await provider.processRewrite(messages: messageTuples, systemPrompt: systemPrompt)
+                let output = try await provider.processRewrite(messages: messageTuples, systemPrompt: systemPrompt)
+                if self.shouldTracePromptProcessing {
+                    self.logPromptTrace("Model answer (A)", value: output)
+                }
+                return output
             }
             #endif
             throw NSError(
@@ -276,13 +321,27 @@ final class RewriteModeService: ObservableObject {
         // Log thinking if present (for debugging)
         if let thinking = response.thinking {
             DebugLogger.shared.debug("LLM thinking tokens extracted (\(thinking.count) chars)", source: "RewriteModeService")
+            if self.shouldTracePromptProcessing {
+                self.logPromptTrace("Model thinking", value: thinking)
+            }
         }
 
         DebugLogger.shared.debug("Response complete. Content length: \(response.content.count)", source: "RewriteModeService")
+        if self.shouldTracePromptProcessing {
+            self.logPromptTrace("Model answer (A)", value: response.content)
+        }
 
         // For non-streaming, we return the content directly
         // For streaming, rewrittenText is already updated via callback,
         // but we return the final content for consistency
         return response.content
+    }
+
+    private func logPromptTrace(_ title: String, value: String) {
+        let line = "[PromptTrace][Edit] \(title):\n\(value)"
+        if self.forcePromptTraceToConsole {
+            print(line)
+        }
+        DebugLogger.shared.debug(line, source: "RewriteModeService")
     }
 }

@@ -14,25 +14,13 @@ extension AIEnhancementSettingsView {
     var advancedSettingsCard: some View {
         ThemedCard(style: .prominent, hoverEffect: false) {
             VStack(alignment: .leading, spacing: 12) {
-                // Header
-                HStack {
-                    Image(systemName: "gearshape.2.fill")
-                        .font(.title3)
-                        .foregroundStyle(self.theme.palette.accent)
-                    Text("Advanced")
-                        .font(.headline)
-                        .fontWeight(.semibold)
-                    Spacer()
-                }
-
-                // Prompts (unified prompt system)
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Prompts")
+                            Text("Prompt Profiles")
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(self.theme.palette.primaryText)
-                            Text("Create mode-specific prompts for Dictate and Edit. Select which prompt is active per mode.")
+                            Text("Choose the active prompt for each mode.")
                                 .font(.system(size: 13))
                                 .foregroundStyle(self.theme.palette.secondaryText)
                         }
@@ -44,54 +32,8 @@ extension AIEnhancementSettingsView {
                         .frame(minWidth: AISettingsLayout.actionMinWidth, minHeight: AISettingsLayout.controlHeight)
                     }
 
-                    // Built-in default cards
-                    self.promptProfileCard(
-                        title: "Default Dictate",
-                        subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: .dictate)),
-                        mode: .dictate,
-                        isSelected: self.viewModel.selectedPromptID(for: .dictate) == nil,
-                        onUse: {
-                            self.viewModel.setSelectedPromptID(nil, for: .dictate)
-                        },
-                        onOpen: { self.viewModel.openDefaultPromptViewer(for: .dictate) }
-                    )
-
-                    self.promptProfileCard(
-                        title: "Default Edit",
-                        subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: .edit)),
-                        mode: .edit,
-                        isSelected: self.viewModel.selectedPromptID(for: .edit) == nil,
-                        onUse: {
-                            self.viewModel.setSelectedPromptID(nil, for: .edit)
-                        },
-                        onOpen: { self.viewModel.openDefaultPromptViewer(for: .edit) }
-                    )
-
-                    // User prompt cards
-                    let profiles = self.viewModel.dictationPromptProfiles
-                        .filter { SettingsStore.PromptMode.visiblePromptModes.contains($0.mode.normalized) }
-                    if profiles.isEmpty {
-                        Text("No custom prompts yet. Click “+ Add Prompt” to create one.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 4)
-                    } else {
-                        ForEach(profiles) { profile in
-                            self.promptProfileCard(
-                                title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
-                                subtitle: SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt).isEmpty
-                                    ? "Empty prompt (uses Default)"
-                                    : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
-                                mode: profile.mode,
-                                showContextBadge: profile.includeContext,
-                                isSelected: self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
-                                onUse: {
-                                    self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
-                                },
-                                onOpen: { self.viewModel.openEditor(for: profile) },
-                                onDelete: { self.viewModel.requestDeletePrompt(profile) }
-                            )
-                        }
+                    ForEach(SettingsStore.PromptMode.visiblePromptModes) { mode in
+                        self.promptModeSection(mode: mode)
                     }
                 }
                 .padding(.horizontal, 4)
@@ -107,14 +49,16 @@ extension AIEnhancementSettingsView {
         title: String,
         subtitle: String,
         mode: SettingsStore.PromptMode,
-        showContextBadge: Bool = false,
+        contextState: Bool? = nil,
         isSelected: Bool,
         onUse: @escaping () -> Void,
-        onOpen: @escaping () -> Void,
+        onManage: @escaping () -> Void,
+        onResetDefault: (() -> Void)? = nil,
+        canResetDefault: Bool = false,
         onDelete: (() -> Void)? = nil
     ) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button(action: onOpen) {
+        HStack(alignment: .center, spacing: 10) {
+            Button(action: onUse) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Text(title)
@@ -129,16 +73,16 @@ extension AIEnhancementSettingsView {
                                     .fill(self.theme.palette.cardBorder.opacity(0.3))
                             )
                             .foregroundStyle(self.theme.palette.secondaryText)
-                        if showContextBadge {
-                            Text("Uses {context}")
+                        if let contextState {
+                            Text(contextState ? "Context: On" : "Context: Off")
                                 .font(.caption2)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
                                 .background(
                                     RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(self.theme.palette.accent.opacity(0.16))
+                                        .fill(contextState ? self.theme.palette.accent.opacity(0.12) : self.theme.palette.cardBorder.opacity(0.28))
                                 )
-                                .foregroundStyle(self.theme.palette.accent)
+                                .foregroundStyle(contextState ? self.theme.palette.accent : self.theme.palette.secondaryText)
                         }
                         if isSelected {
                             Text("Active")
@@ -152,7 +96,8 @@ extension AIEnhancementSettingsView {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .multilineTextAlignment(.leading)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -162,31 +107,111 @@ extension AIEnhancementSettingsView {
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 8) {
-                Button("Use") { onUse() }
-                    .buttonStyle(CompactButtonStyle())
-                    .frame(minWidth: AISettingsLayout.promptActionMinWidth, minHeight: AISettingsLayout.controlHeight)
-                    .disabled(isSelected)
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(isSelected ? self.theme.palette.accent : self.theme.palette.secondaryText.opacity(0.35))
+                    .frame(width: 18, height: 18)
 
-                if let onDelete {
-                    Button(action: { onDelete() }) {
-                        HStack(spacing: 4) { Image(systemName: "trash"); Text("Delete") }
-                            .font(.caption)
+                    Menu {
+                        Button("Edit Prompt") { onManage() }
+                        if mode == .edit {
+                            Divider()
+                            Text("Context template is applied when enabled and selected text exists.")
+                        }
+                        if let onDelete {
+                            Divider()
+                            Button(role: .destructive, action: { onDelete() }) {
+                                Label("Delete Prompt", systemImage: "trash")
+                            }
+                        } else if let onResetDefault {
+                            Divider()
+                            Button("Reset to Built-in Default", role: .destructive) { onResetDefault() }
+                                .disabled(!canResetDefault)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(width: AISettingsLayout.controlHeight, height: AISettingsLayout.controlHeight)
                     }
-                    .buttonStyle(CompactButtonStyle(foreground: .red, borderColor: .red.opacity(0.6)))
-                    .frame(minWidth: AISettingsLayout.promptActionMinWidth, minHeight: AISettingsLayout.controlHeight)
-                }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(self.theme.palette.secondaryText)
             }
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.7))
+                .fill(self.theme.palette.cardBackground.opacity(0.64))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(isSelected ? self.theme.palette.accent.opacity(0.55) : self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                        .stroke(isSelected ? self.theme.palette.accent.opacity(0.42) : self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
                 )
         )
+    }
+
+    @ViewBuilder
+    private func promptModeSection(mode: SettingsStore.PromptMode) -> some View {
+        let customProfiles = self.viewModel.dictationPromptProfiles
+            .filter { $0.mode.normalized == mode }
+
+        VStack(alignment: .leading, spacing: 8) {
+            Text("\(mode.displayName) Prompts")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(self.theme.palette.secondaryText)
+                .textCase(.uppercase)
+                .padding(.horizontal, 2)
+            Text(self.promptSectionDescription(for: mode))
+                .font(.caption)
+                .foregroundStyle(self.theme.palette.secondaryText)
+                .padding(.horizontal, 2)
+
+            self.promptProfileCard(
+                title: "Default \(mode.displayName)",
+                subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: mode)),
+                mode: mode,
+                contextState: mode == .edit ? true : nil,
+                isSelected: self.viewModel.selectedPromptID(for: mode) == nil,
+                onUse: {
+                    self.viewModel.setSelectedPromptID(nil, for: mode)
+                },
+                onManage: { self.viewModel.openDefaultPromptViewer(for: mode) },
+                onResetDefault: { self.viewModel.resetDefaultPromptOverride(for: mode) },
+                canResetDefault: self.viewModel.hasDefaultPromptOverride(for: mode)
+            )
+
+            if customProfiles.isEmpty {
+                Text("No custom \(mode.displayName.lowercased()) prompts yet.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
+            } else {
+                ForEach(customProfiles) { profile in
+                    self.promptProfileCard(
+                        title: profile.name.isEmpty ? "Untitled Prompt" : profile.name,
+                        subtitle: SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt).isEmpty
+                            ? "Empty prompt (uses Default)"
+                            : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
+                        mode: profile.mode,
+                        contextState: profile.mode.normalized == .edit ? profile.includeContext : nil,
+                        isSelected: self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
+                        onUse: {
+                            self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
+                        },
+                        onManage: { self.viewModel.openEditor(for: profile) },
+                        onDelete: { self.viewModel.requestDeletePrompt(profile) }
+                    )
+                }
+            }
+        }
+    }
+
+    private func promptSectionDescription(for mode: SettingsStore.PromptMode) -> String {
+        switch mode {
+        case .dictate:
+            return "Turns raw speech into polished text (clean up, email drafts, code, terminal commands, etc)."
+        case .edit, .write, .rewrite:
+            return "Writes fresh content or edits selected text using optional context."
+        }
     }
 
     func promptEditorSheet(mode: PromptEditorMode) -> some View {

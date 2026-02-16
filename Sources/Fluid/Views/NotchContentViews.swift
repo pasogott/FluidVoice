@@ -127,6 +127,8 @@ class NotchContentState: ObservableObject {
 
     /// Called when the user requests a live mode switch from the prompt picker tabs.
     var onPromptModeSwitchRequested: ((SettingsStore.PromptMode) -> Void)?
+    /// Called when the user requests a live overlay mode switch from the mode picker.
+    var onOverlayModeSwitchRequested: ((OverlayMode) -> Void)?
 
     /// Set recording state (for waveform visibility in expanded view)
     func setRecordingInExpandedMode(_ recording: Bool) {
@@ -298,15 +300,35 @@ struct NotchExpandedView: View {
         self.contentState.mode == .command && !self.contentState.commandConversationHistory.isEmpty
     }
 
+    private var normalizedOverlayMode: OverlayMode {
+        switch self.contentState.mode {
+        case .dictation:
+            return .dictation
+        case .edit, .write, .rewrite:
+            return .edit
+        case .command:
+            return .command
+        }
+    }
+
+    private var activePromptMode: SettingsStore.PromptMode? {
+        switch self.normalizedOverlayMode {
+        case .dictation:
+            return .dictate
+        case .edit:
+            return .edit
+        case .command, .write, .rewrite:
+            return nil
+        }
+    }
+
     private var isPromptSelectableMode: Bool {
-        self.contentState.mode == .dictation ||
-            self.contentState.mode == .edit ||
-            self.contentState.mode == .write ||
-            self.contentState.mode == .rewrite
+        self.activePromptMode != nil
     }
 
     private var selectedPromptLabel: String {
-        if let profile = self.settings.selectedPromptProfile(for: self.contentState.promptPickerMode) {
+        guard let activePromptMode else { return "N/A" }
+        if let profile = self.settings.selectedPromptProfile(for: activePromptMode) {
             let name = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? "Untitled" : name
         }
@@ -335,32 +357,11 @@ struct NotchExpandedView: View {
     }
 
     private func promptMenuContent() -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                ForEach(SettingsStore.PromptMode.visiblePromptModes, id: \.rawValue) { mode in
-                    Button(action: {
-                        let normalizedMode = mode.normalized
-                        if !self.contentState.isProcessing {
-                            self.contentState.onPromptModeSwitchRequested?(normalizedMode)
-                        }
-                        self.contentState.promptPickerMode = normalizedMode
-                    }) {
-                        Text(mode.displayName)
-                            .font(.caption2)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .fill(self.contentState.promptPickerMode == mode ? Color.white.opacity(0.18) : Color.clear)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.bottom, 6)
+        let promptMode = self.activePromptMode ?? .dictate
 
+        return VStack(alignment: .leading, spacing: 0) {
             Button(action: {
-                self.settings.setSelectedPromptID(nil, for: self.contentState.promptPickerMode)
+                self.settings.setSelectedPromptID(nil, for: promptMode)
                 let pid = NotchContentState.shared.recordingTargetPID
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                     if let pid { _ = TypingService.activateApp(pid: pid) }
@@ -370,7 +371,7 @@ struct NotchExpandedView: View {
                 HStack {
                     Text("Default")
                     Spacer()
-                    if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == nil {
+                    if self.settings.selectedPromptID(for: promptMode) == nil {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .semibold))
                     }
@@ -379,13 +380,13 @@ struct NotchExpandedView: View {
             .buttonStyle(.plain)
             .padding(.vertical, 4)
 
-            if !self.settings.promptProfiles(for: self.contentState.promptPickerMode).isEmpty {
+            if !self.settings.promptProfiles(for: promptMode).isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 
-                ForEach(self.settings.promptProfiles(for: self.contentState.promptPickerMode)) { profile in
+                ForEach(self.settings.promptProfiles(for: promptMode)) { profile in
                     Button(action: {
-                        self.settings.setSelectedPromptID(profile.id, for: self.contentState.promptPickerMode)
+                        self.settings.setSelectedPromptID(profile.id, for: promptMode)
                         let pid = NotchContentState.shared.recordingTargetPID
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                             if let pid { _ = TypingService.activateApp(pid: pid) }
@@ -395,7 +396,7 @@ struct NotchExpandedView: View {
                         HStack {
                             Text(profile.name.isEmpty ? "Untitled" : profile.name)
                             Spacer()
-                            if self.settings.selectedPromptID(for: self.contentState.promptPickerMode) == profile.id {
+                            if self.settings.selectedPromptID(for: promptMode) == profile.id {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 10, weight: .semibold))
                             }
@@ -452,8 +453,8 @@ struct NotchExpandedView: View {
                 }
             }
 
-            // Prompt selector (dictate/write/rewrite modes)
-            if self.isPromptSelectableMode && !self.contentState.isProcessing {
+            // Prompt selector
+            if !self.contentState.isProcessing {
                 ZStack(alignment: .top) {
                     HStack(spacing: 6) {
                         Text("Prompt:")
@@ -471,6 +472,7 @@ struct NotchExpandedView: View {
                     .padding(.vertical, 4)
                     .background(Color.white.opacity(0.00))
                     .cornerRadius(6)
+                    .opacity(self.isPromptSelectableMode ? 1.0 : 0.6)
                     .onHover { hovering in
                         self.handlePromptHover(hovering)
                     }

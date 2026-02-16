@@ -590,6 +590,7 @@ struct ContentView: View {
         }
         .onDisappear {
             NotchContentState.shared.onPromptModeSwitchRequested = nil
+            NotchContentState.shared.onOverlayModeSwitchRequested = nil
             Task { await self.asr.stopWithoutTranscription() }
             // Note: Overlay lifecycle is now managed by MenuBarManager
 
@@ -1267,6 +1268,23 @@ struct ContentView: View {
         return SettingsStore.shared.effectiveSystemPrompt(for: .dictate)
     }
 
+    private var shouldTracePromptProcessing: Bool {
+        self.forcePromptTraceToConsole ||
+            UserDefaults.standard.bool(forKey: "EnableDebugLogs")
+    }
+
+    private var forcePromptTraceToConsole: Bool {
+        ProcessInfo.processInfo.environment["FLUID_PROMPT_TRACE"] == "1"
+    }
+
+    private func logDictationPromptTrace(_ title: String, value: String) {
+        let line = "[PromptTrace][Dictate] \(title):\n\(value)"
+        if self.forcePromptTraceToConsole {
+            print(line)
+        }
+        DebugLogger.shared.debug(line, source: "ContentView")
+    }
+
     private func customPromptAnalyticsProperties(promptSource: String, overrideEmpty: Bool?) -> [String: Any] {
         let providerID = SettingsStore.shared.selectedProviderID
         let providerKey = self.providerKey(for: providerID)
@@ -1339,8 +1357,27 @@ struct ContentView: View {
                 let provider = AppleIntelligenceProvider()
                 let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
                 let systemPrompt = self.buildSystemPrompt(appInfo: appInfo)
+                if self.shouldTracePromptProcessing {
+                    let selectedProfile = SettingsStore.shared.selectedPromptProfile(for: .dictate)
+                    let selectedPromptName: String = {
+                        if let profile = selectedProfile {
+                            return profile.name.isEmpty ? "Untitled Prompt" : profile.name
+                        }
+                        return "Default Dictate"
+                    }()
+                    self.logDictationPromptTrace("Selected prompt profile", value: selectedPromptName)
+                    self.logDictationPromptTrace("Prompt body (custom/default body)", value: SettingsStore.shared.effectivePromptBody(for: .dictate))
+                    self.logDictationPromptTrace("Built-in default system prompt (baseline)", value: SettingsStore.defaultSystemPromptText(for: .dictate))
+                    self.logDictationPromptTrace("Final system prompt sent to model", value: systemPrompt)
+                    self.logDictationPromptTrace("Input transcription (Q)", value: inputText)
+                    self.logDictationPromptTrace("Selected context text", value: "<none (dictation mode)>")
+                }
                 DebugLogger.shared.debug("Using Apple Intelligence for transcription cleanup", source: "ContentView")
-                return await provider.process(systemPrompt: systemPrompt, userText: inputText)
+                let output = await provider.process(systemPrompt: systemPrompt, userText: inputText)
+                if self.shouldTracePromptProcessing {
+                    self.logDictationPromptTrace("Model answer (A)", value: output)
+                }
+                return output
             }
             #endif
             return inputText // Fallback if not available
@@ -1364,6 +1401,25 @@ struct ContentView: View {
             return self.buildSystemPrompt(appInfo: appInfo)
         }()
         DebugLogger.shared.debug("Using app context for AI: app=\(appInfo.name), bundleId=\(appInfo.bundleId), title=\(appInfo.windowTitle)", source: "ContentView")
+        if self.shouldTracePromptProcessing {
+            let selectedProfile = SettingsStore.shared.selectedPromptProfile(for: .dictate)
+            let selectedPromptName: String = {
+                if let profile = selectedProfile {
+                    return profile.name.isEmpty ? "Untitled Prompt" : profile.name
+                }
+                return "Default Dictate"
+            }()
+            self.logDictationPromptTrace("Selected prompt profile", value: selectedPromptName)
+            self.logDictationPromptTrace("Prompt body (custom/default body)", value: SettingsStore.shared.effectivePromptBody(for: .dictate))
+            self.logDictationPromptTrace("Built-in default system prompt (baseline)", value: SettingsStore.defaultSystemPromptText(for: .dictate))
+            self.logDictationPromptTrace("Prompt override in use", value: (overrideSystemPrompt?.isEmpty == false) ? "yes" : "no")
+            if let overrideSystemPrompt, !overrideSystemPrompt.isEmpty {
+                self.logDictationPromptTrace("Override system prompt", value: overrideSystemPrompt)
+            }
+            self.logDictationPromptTrace("Final system prompt sent to model", value: systemPrompt)
+            self.logDictationPromptTrace("Input transcription (Q)", value: inputText)
+            self.logDictationPromptTrace("Selected context text", value: "<none (dictation mode)>")
+        }
 
         // Check if this is a reasoning model that doesn't support temperature parameter
         let modelLower = derivedSelectedModel.lowercased()
@@ -1423,6 +1479,13 @@ struct ContentView: View {
             // Log thinking if present (for debugging)
             if let thinking = response.thinking {
                 DebugLogger.shared.debug("LLM thinking tokens extracted (\(thinking.count) chars)", source: "ContentView")
+                if self.shouldTracePromptProcessing {
+                    self.logDictationPromptTrace("Model thinking", value: thinking)
+                }
+            }
+
+            if self.shouldTracePromptProcessing {
+                self.logDictationPromptTrace("Model answer (A)", value: response.content)
             }
 
             return response.content.isEmpty ? "<no content>" : response.content
@@ -1751,6 +1814,24 @@ struct ContentView: View {
         }
     }
 
+    private func handleLiveOverlayModeSwitch(_ mode: OverlayMode) {
+        guard !NotchContentState.shared.isProcessing else { return }
+        switch mode {
+        case .dictation:
+            self.isRecordingForCommand = false
+            self.handleLivePromptModeSwitch(.dictate)
+        case .edit, .write, .rewrite:
+            self.isRecordingForCommand = false
+            self.handleLivePromptModeSwitch(.edit)
+        case .command:
+            guard self.isRecordingForCommand == false || NotchContentState.shared.mode != .command else { return }
+            self.isRecordingForRewrite = false
+            self.rewriteModeService.clearState()
+            self.isRecordingForCommand = true
+            self.menuBarManager.setOverlayMode(.command)
+        }
+    }
+
     // MARK: - Command Mode Voice Processing
 
     private func processCommandWithVoice(_ command: String) async {
@@ -1999,6 +2080,9 @@ struct ContentView: View {
     private func initializeHotkeyManagerIfNeeded() {
         NotchContentState.shared.onPromptModeSwitchRequested = { mode in
             self.handleLivePromptModeSwitch(mode)
+        }
+        NotchContentState.shared.onOverlayModeSwitchRequested = { mode in
+            self.handleLiveOverlayModeSwitch(mode)
         }
 
         guard self.hotkeyManager == nil else { return }
