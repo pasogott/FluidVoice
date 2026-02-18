@@ -59,15 +59,20 @@ final class FluidAudioProvider: TranscriptionProvider {
         )
         progressHandler?(0.70)
 
-        // Single manager path minimizes memory on low-resource devices.
-        let manager = AsrManager(config: ASRConfig.default)
-        try await manager.initialize(models: models)
-        DebugLogger.shared.debug("FluidAudioProvider: AsrManager initialized", source: "FluidAudioProvider")
+        // Streaming manager: lightweight, no vocab boosting → avoids CTC/ANE contention
+        // that causes intermittent SIGTRAP crashes during streaming inference.
+        let streamingManager = AsrManager(config: ASRConfig.default)
+        try await streamingManager.initialize(models: models)
+        DebugLogger.shared.debug("FluidAudioProvider: Streaming AsrManager initialized", source: "FluidAudioProvider")
 
         self.isWordBoostingActive = false
         self.boostedVocabularyTermsCount = 0
         self.boostedTermLookup = []
 
+        // Final manager: separate instance with vocab boosting for end-of-recording rescoring.
+        // Shares the same underlying MLModel objects (reference types) so memory overhead
+        // is only the decoder state (~100KB).
+        let finalManager: AsrManager
         if self.configureWordBoosting {
             do {
                 if let vocabBundle = try await ParakeetVocabularyStore.shared.loadTokenizedVocabularyBundle() {
@@ -75,7 +80,9 @@ final class FluidAudioProvider: TranscriptionProvider {
                         "FluidAudioProvider: Vocabulary bundle loaded with \(vocabBundle.vocabulary.terms.count) terms",
                         source: "FluidAudioProvider"
                     )
-                    try await manager.configureVocabularyBoosting(
+                    let boostedManager = AsrManager(config: ASRConfig.default)
+                    try await boostedManager.initialize(models: models)
+                    try await boostedManager.configureVocabularyBoosting(
                         vocabulary: vocabBundle.vocabulary,
                         ctcModels: vocabBundle.ctcModels
                     )
@@ -83,22 +90,25 @@ final class FluidAudioProvider: TranscriptionProvider {
                     self.boostedVocabularyTermsCount = vocabBundle.vocabulary.terms.count
                     self.boostedTermLookup = Self.makeBoostedTermLookup(from: vocabBundle.vocabulary.terms)
                     DebugLogger.shared.info(
-                        "FluidAudioProvider: Enabled vocabulary boosting with \(self.boostedVocabularyTermsCount) terms",
+                        "FluidAudioProvider: Enabled vocabulary boosting with \(self.boostedVocabularyTermsCount) terms (final only)",
                         source: "FluidAudioProvider"
                     )
+                    finalManager = boostedManager
                 } else {
                     DebugLogger.shared.debug("FluidAudioProvider: No vocabulary boost terms found; using base ASR manager", source: "FluidAudioProvider")
+                    finalManager = streamingManager
                 }
             } catch {
                 DebugLogger.shared.warning("FluidAudioProvider: Failed to configure vocabulary boosting: \(error)", source: "FluidAudioProvider")
+                finalManager = streamingManager
             }
         } else {
             DebugLogger.shared.debug("FluidAudioProvider: Word boosting disabled by configuration", source: "FluidAudioProvider")
+            finalManager = streamingManager
         }
 
-        // Boosting now applies in both streaming and final paths.
-        self.streamingAsrManager = manager
-        self.finalAsrManager = manager
+        self.streamingAsrManager = streamingManager
+        self.finalAsrManager = finalManager
 
         self.isReady = true
         progressHandler?(1.0)
@@ -134,8 +144,22 @@ final class FluidAudioProvider: TranscriptionProvider {
             )
         }
 
-        let result = try await manager.transcribe(samples, source: AudioSource.microphone)
-        return ASRTranscriptionResult(text: result.text, confidence: result.confidence)
+        // If the boosted final manager fails, fall back to the unboosted streaming
+        // manager so the user still gets a transcription (just without CTC rescoring).
+        do {
+            let result = try await manager.transcribe(samples, source: AudioSource.microphone)
+            return ASRTranscriptionResult(text: result.text, confidence: result.confidence)
+        } catch {
+            guard let fallback = self.streamingAsrManager, fallback !== manager else {
+                throw error
+            }
+            DebugLogger.shared.warning(
+                "FluidAudioProvider: Boosted final transcription failed (\(error.localizedDescription)), retrying without vocab boost",
+                source: "FluidAudioProvider"
+            )
+            let result = try await fallback.transcribe(samples, source: AudioSource.microphone)
+            return ASRTranscriptionResult(text: result.text, confidence: result.confidence)
+        }
     }
 
     func modelsExistOnDisk() -> Bool {
