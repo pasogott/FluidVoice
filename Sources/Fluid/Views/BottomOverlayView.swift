@@ -1682,6 +1682,10 @@ struct BottomOverlayView: View {
         LayoutConstants.get(for: self.settings.overlaySize)
     }
 
+    private var isCompactControls: Bool {
+        self.settings.overlaySize == .medium
+    }
+
     private var modeColor: Color {
         self.contentState.mode.notchColor
     }
@@ -1929,9 +1933,13 @@ struct BottomOverlayView: View {
 
     private var modeSelectorTrigger: some View {
         HStack(spacing: 5) {
-            Text("Mode:")
-                .font(.system(size: self.promptSelectorFontSize, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+            if !self.isCompactControls {
+                Text("Mode:")
+                    .font(.system(size: self.promptSelectorFontSize, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             Text(self.modeLabel)
                 .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.75))
@@ -1940,6 +1948,7 @@ struct BottomOverlayView: View {
                 .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
                 .foregroundStyle(.white.opacity(0.45))
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 8)
         .padding(.vertical, self.promptSelectorVerticalPadding)
         .background(
@@ -1975,9 +1984,13 @@ struct BottomOverlayView: View {
 
     private var promptSelectorTrigger: some View {
         HStack(spacing: 5) {
-            Text("Prompt:")
-                .font(.system(size: self.promptSelectorFontSize, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+            if !self.isCompactControls {
+                Text("Prompt:")
+                    .font(.system(size: self.promptSelectorFontSize, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
             Text(self.selectedPromptLabel)
                 .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.75))
@@ -1986,6 +1999,7 @@ struct BottomOverlayView: View {
                 .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
                 .foregroundStyle(.white.opacity(0.45))
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 8)
         .padding(.vertical, self.promptSelectorVerticalPadding)
         .background(
@@ -2038,10 +2052,12 @@ struct BottomOverlayView: View {
             Text("Actions")
                 .font(.system(size: self.promptSelectorFontSize, weight: .medium))
                 .foregroundStyle(.white.opacity(0.75))
+                .lineLimit(1)
             Image(systemName: "chevron.up")
                 .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
                 .foregroundStyle(.white.opacity(0.45))
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 8)
         .padding(.vertical, self.promptSelectorVerticalPadding)
         .background(
@@ -2055,18 +2071,27 @@ struct BottomOverlayView: View {
     private var aiToggleChip: some View {
         let disabled = self.contentState.isProcessing
         let isEnabled = self.settings.enableAIProcessing
-        return HStack(spacing: 5) {
-            Text("AI:")
-                .font(.system(size: self.promptSelectorFontSize, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
-            Text(isEnabled ? "On" : "Off")
-                .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
-                .foregroundStyle(isEnabled ? .white.opacity(0.82) : .white.opacity(0.7))
-                .lineLimit(1)
-            Image(systemName: isEnabled ? "brain.fill" : "brain")
-                .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
-                .foregroundStyle(isEnabled ? .white.opacity(0.65) : .white.opacity(0.45))
+        return HStack(spacing: self.isCompactControls ? 0 : 5) {
+            if self.isCompactControls {
+                Text(isEnabled ? "AI On" : "AI Off")
+                    .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
+                    .foregroundStyle(isEnabled ? .white.opacity(0.82) : .white.opacity(0.7))
+                    .lineLimit(1)
+            } else {
+                Text("AI:")
+                    .font(.system(size: self.promptSelectorFontSize, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .lineLimit(1)
+                Text(isEnabled ? "On" : "Off")
+                    .font(.system(size: self.promptSelectorFontSize, weight: .semibold))
+                    .foregroundStyle(isEnabled ? .white.opacity(0.82) : .white.opacity(0.7))
+                    .lineLimit(1)
+                Image(systemName: isEnabled ? "brain.fill" : "brain")
+                    .font(.system(size: max(self.promptSelectorFontSize - 1, 8), weight: .semibold))
+                    .foregroundStyle(isEnabled ? .white.opacity(0.65) : .white.opacity(0.45))
+            }
         }
+        .fixedSize(horizontal: true, vertical: false)
         .padding(.horizontal, 8)
         .padding(.vertical, self.promptSelectorVerticalPadding)
         .background(
@@ -2154,15 +2179,17 @@ struct BottomOverlayView: View {
     var body: some View {
         VStack(spacing: max(4, self.layout.vPadding / 2)) {
             if self.layout.showsTopControls {
-                HStack(spacing: 8) {
+                HStack(spacing: self.isCompactControls ? 6 : 8) {
                     self.modeSelectorView
                     self.promptSelectorView
-                    Spacer(minLength: 6)
+                    Spacer(minLength: 4)
                     self.aiToggleChip
                     self.actionsSelectorView
-                    self.settingsChip
+                    if !self.isCompactControls {
+                        self.settingsChip
+                    }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: self.isCompactControls ? .center : .leading)
                 .padding(.horizontal, self.layout.hPadding)
             }
 

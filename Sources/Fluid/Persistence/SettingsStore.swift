@@ -92,6 +92,7 @@ final class SettingsStore: ObservableObject {
 
         // Custom Dictionary
         static let customDictionaryEntries = "CustomDictionaryEntries"
+        static let vocabularyBoostingEnabled = "VocabularyBoostingEnabled"
 
         // Transcription Provider (ASR)
         static let selectedTranscriptionProvider = "SelectedTranscriptionProvider"
@@ -1944,6 +1945,18 @@ final class SettingsStore: ObservableObject {
             self.id = id
             self.triggers = triggers.map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
             self.replacement = replacement
+        }
+    }
+
+    var vocabularyBoostingEnabled: Bool {
+        get {
+            let value = self.defaults.object(forKey: Keys.vocabularyBoostingEnabled)
+            return value as? Bool ?? false
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.vocabularyBoostingEnabled)
+            NotificationCenter.default.post(name: .parakeetVocabularyDidChange, object: nil)
         }
     }
 

@@ -23,6 +23,7 @@ struct CustomDictionaryView: View {
 
     @State private var boostStatusMessage = "Add custom words for better Parakeet recognition."
     @State private var boostHasError = false
+    @State private var vocabBoostingEnabled: Bool = SettingsStore.shared.vocabularyBoostingEnabled
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -294,6 +295,28 @@ struct CustomDictionaryView: View {
                         Text("Applies when using a Parakeet voice engine.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+
+                        HStack {
+                            Toggle(isOn: self.$vocabBoostingEnabled) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Vocabulary Boosting")
+                                        .font(.subheadline.weight(.medium))
+                                    Text("Uses a secondary ML model to improve recognition of custom words. Disable if you experience issues.")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .onChange(of: self.vocabBoostingEnabled) { _, newValue in
+                                SettingsStore.shared.vocabularyBoostingEnabled = newValue
+                            }
+                        }
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(self.theme.palette.contentBackground.opacity(0.6))
+                        )
 
                         if self.boostTerms.isEmpty {
                             VStack(spacing: 10) {

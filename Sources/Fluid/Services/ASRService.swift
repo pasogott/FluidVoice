@@ -179,9 +179,14 @@ final class ASRService: ObservableObject {
         if let existing = fluidAudioProvider {
             return existing
         }
-        let provider = FluidAudioProvider()
+        let provider = FluidAudioProvider(
+            configureWordBoosting: SettingsStore.shared.vocabularyBoostingEnabled
+        )
         self.fluidAudioProvider = provider
-        DebugLogger.shared.info("ASRService: Created FluidAudio provider", source: "ASRService")
+        DebugLogger.shared.info(
+            "ASRService: Created FluidAudio provider [vocabBoosting=\(SettingsStore.shared.vocabularyBoostingEnabled)]",
+            source: "ASRService"
+        )
         return provider
     }
 

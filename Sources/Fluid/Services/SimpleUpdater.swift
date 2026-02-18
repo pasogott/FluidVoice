@@ -227,9 +227,9 @@ final class SimpleUpdater {
             throw PMKError.cancelled // mimic AppUpdater semantics for up-to-date
         }
 
-        // Find asset matching: "{repo-lower}-{version-no-v}.*" and zip preferred
-        let verString = self.versionString(latestVersion)
-        let prefix = "\(repo.lowercased())-\(verString)"
+        // Find asset matching: "{repo-lower}-{version-from-tag}.*" and zip preferred
+        let rawVersion = latestTag.hasPrefix("v") ? String(latestTag.dropFirst()) : latestTag
+        let prefix = "\(repo.lowercased())-\(rawVersion)"
         let asset = latest.assets.first { asset in
             let base = (asset.name as NSString).deletingPathExtension.lowercased()
             return (base == prefix) &&
