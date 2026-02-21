@@ -215,11 +215,11 @@ struct WelcomeView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // Write Mode
+                // Edit Mode
                 ThemedCard(style: .standard) {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(spacing: 8) {
-                            Label("Write Mode", systemImage: "pencil.and.outline")
+                            Label("Edit Mode", systemImage: "pencil.and.outline")
                                 .font(.headline)
                                 .foregroundStyle(.blue)
 
@@ -227,20 +227,20 @@ struct WelcomeView: View {
 
                             Spacer()
 
-                            Button("Open") {
-                                self.selectedSidebarItem = .rewriteMode
+                            Button("Open AI Settings") {
+                                self.selectedSidebarItem = .aiEnhancements
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
 
-                        Text("AI-powered writing assistant. Write fresh content or rewrite selected text with voice.")
+                        Text("AI-powered editing assistant. Write fresh content or edit selected text with voice.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
                         VStack(alignment: .leading, spacing: 10) {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("To Write Fresh")
+                                Text("Create New Text")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.blue)
 
@@ -257,7 +257,7 @@ struct WelcomeView: View {
                             }
 
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("To Rewrite/Edit")
+                                Text("Edit Selected Text")
                                     .font(.subheadline.weight(.medium))
                                     .foregroundStyle(.blue)
 
@@ -323,6 +323,24 @@ struct WelcomeView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                             }
+                        }
+
+                        if self.settings.selectedSpeechModel == .parakeetTDT || self.settings.selectedSpeechModel == .parakeetTDTv2 {
+                            HStack(spacing: 6) {
+                                Image(systemName: "text.magnifyingglass")
+                                    .font(.caption)
+                                    .foregroundStyle(self.theme.palette.accent)
+                                Text(self.asr.wordBoostStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(self.theme.palette.contentBackground.opacity(0.6))
+                            )
                         }
 
                         VStack(alignment: .leading, spacing: 12) {
