@@ -16,6 +16,8 @@ struct MeetingTranscriptionView: View {
     @State private var showingExportDialog = false
     @State private var exportFormat: ExportFormat = .text
     @State private var showingCopyConfirmation = false
+    @State private var isDropTargeted = false
+    @State private var dropErrorMessage: String?
 
     enum ExportFormat: String, CaseIterable {
         case text = "Text (.txt)"
@@ -67,6 +69,11 @@ struct MeetingTranscriptionView: View {
                     // Error Card (only show when we have an error)
                     if let error = transcriptionService.error {
                         self.errorCard(error: error)
+                    }
+
+                    // Drop error (unsupported file type)
+                    if let message = self.dropErrorMessage {
+                        self.dropErrorCard(message: message)
                     }
                 }
                 .padding(24)
@@ -147,7 +154,7 @@ struct MeetingTranscriptionView: View {
                 .disabled(self.transcriptionService.isTranscribing)
 
             } else {
-                // File picker button
+                // File picker button – whole area is tappable; supports drag-and-drop
                 Button(action: {
                     self.showingFilePicker = true
                 }) {
@@ -164,6 +171,7 @@ struct MeetingTranscriptionView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(32)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .background(
@@ -176,7 +184,10 @@ struct MeetingTranscriptionView: View {
                 )
                 .overlay(RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [8]))
-                    .foregroundColor(Color.fluidGreen.opacity(0.3)))
+                    .foregroundColor(Color.fluidGreen.opacity(self.isDropTargeted ? 0.7 : 0.3)))
+                .onDrop(of: [.fileURL], isTargeted: self.$isDropTargeted) { providers in
+                    self.handleDrop(providers: providers)
+                }
             }
         }
         .fileImporter(
@@ -349,7 +360,63 @@ struct MeetingTranscriptionView: View {
         )
     }
 
+    // MARK: - Drop Error Card
+
+    private func dropErrorCard(message: String) -> some View {
+        HStack {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.red)
+
+            Text(message)
+                .font(.subheadline)
+
+            Spacer()
+
+            Button("Dismiss") {
+                self.dropErrorMessage = nil
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.red.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.red.opacity(0.4), lineWidth: 1)
+                )
+        )
+    }
+
     // MARK: - Helper Functions
+
+    private static let supportedFileExtensions = ["wav", "mp3", "m4a", "aac", "flac", "aiff", "caf", "mp4", "mov"]
+
+    private static let dropErrorCopy = "Accepted file types: WAV, MP3, M4A, MP4, MOV, and more."
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL? = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
+            guard let url = url else { return }
+            let ext = url.pathExtension.lowercased()
+            guard Self.supportedFileExtensions.contains(ext) else {
+                DispatchQueue.main.async {
+                    self.dropErrorMessage = Self.dropErrorCopy
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        self.dropErrorMessage = nil
+                    }
+                }
+                return
+            }
+            DispatchQueue.main.async {
+                self.selectedFileURL = url
+                self.transcriptionService.reset()
+                self.dropErrorMessage = nil
+            }
+        }
+        return true
+    }
 
     private func transcribeFile() async {
         guard let fileURL = selectedFileURL else { return }
