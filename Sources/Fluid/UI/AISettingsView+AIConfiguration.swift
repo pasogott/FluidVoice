@@ -1279,13 +1279,15 @@ extension AIEnhancementSettingsView {
                 Image(systemName: "text.bubble.fill")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(self.theme.palette.accent)
-                VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
                     Text("Prompts & Advanced")
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Choose how to process your speech — email, code, terminal, and more")
+                    Text(" - Choose how to process your speech — email, code, terminal, and more")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .lineLimit(1)
+                .truncationMode(.tail)
             }
 
             self.advancedSettingsCard

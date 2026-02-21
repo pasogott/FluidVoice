@@ -136,6 +136,11 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
                 DebugLogger.shared.info("Model download completed: \(model.displayName)", source: "VoiceEngineVM")
             } catch {
                 DebugLogger.shared.error("Failed to download model \(model.displayName): \(error)", source: "VoiceEngineVM")
+                await MainActor.run {
+                    self.asr.errorTitle = "Model Download Failed"
+                    self.asr.errorMessage = error.localizedDescription
+                    self.asr.showError = true
+                }
             }
 
             // Clear downloading state
@@ -190,6 +195,8 @@ final class VoiceEngineSettingsViewModel: ObservableObject {
             return "Parakeet TDT v3 uses CoreML and Neural Engine for fastest transcription (25 languages) on Apple Silicon."
         case .parakeetTDTv2:
             return "Parakeet TDT v2 is an English-only model optimized for accuracy and consistency on Apple Silicon."
+        case .qwen3Asr:
+            return "Qwen3 ASR is a multilingual FluidAudio model with strong quality, but higher memory usage. Requires macOS 15+."
         default:
             return "Whisper models support 99 languages and work on any Mac."
         }
