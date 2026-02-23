@@ -2069,7 +2069,7 @@ struct ContentView: View {
             self.menuBarManager.setOverlayMode(.dictation)
         }
 
-        if SettingsStore.shared.enableTranscriptionSounds, !self.isRecordingForCommand, !self.isRecordingForRewrite {
+        if !self.isRecordingForCommand, !self.isRecordingForRewrite {
             TranscriptionSoundPlayer.shared.playStartSound()
         }
 
@@ -2363,9 +2363,7 @@ struct ContentView: View {
                     "Starting voice recording for command",
                     source: "ContentView"
                 )
-                if SettingsStore.shared.enableTranscriptionSounds {
-                    TranscriptionSoundPlayer.shared.playStartSound()
-                }
+                TranscriptionSoundPlayer.shared.playStartSound()
                 Task {
                     await self.asr.start()
                 }
@@ -2398,9 +2396,7 @@ struct ContentView: View {
 
                 // Start recording immediately for the edit instruction
                 DebugLogger.shared.info("Starting voice recording for edit mode", source: "ContentView")
-                if SettingsStore.shared.enableTranscriptionSounds {
-                    TranscriptionSoundPlayer.shared.playStartSound()
-                }
+                TranscriptionSoundPlayer.shared.playStartSound()
                 Task {
                     await self.asr.start()
                 }

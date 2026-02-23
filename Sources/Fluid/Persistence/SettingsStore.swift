@@ -17,6 +17,7 @@ final class SettingsStore: ObservableObject {
     private let keychain = KeychainService.shared
 
     private init() {
+        self.migrateTranscriptionStartSoundIfNeeded()
         self.ensureDebugLoggingDefaults()
         self.migrateProviderAPIKeysIfNeeded()
         self.scrubSavedProviderAPIKeys()
@@ -1105,6 +1106,7 @@ final class SettingsStore: ObservableObject {
     }
 
     enum TranscriptionStartSound: String, CaseIterable, Identifiable {
+        case none = "none"
         case fluidSfx1 = "fluid_sfx_1"
         case fluidSfx2 = "fluid_sfx_2"
         case fluidSfx3 = "fluid_sfx_3"
@@ -1114,6 +1116,7 @@ final class SettingsStore: ObservableObject {
 
         var displayName: String {
             switch self {
+            case .none: return "None"
             case .fluidSfx1: return "Fluid SFX 1"
             case .fluidSfx2: return "Fluid SFX 2"
             case .fluidSfx3: return "Fluid SFX 3"
@@ -1121,8 +1124,9 @@ final class SettingsStore: ObservableObject {
             }
         }
 
-        var soundFileName: String {
+        var soundFileName: String? {
             switch self {
+            case .none: return nil
             case .fluidSfx1: return "FV_start"
             case .fluidSfx2: return "FV_start_2"
             case .fluidSfx3: return "sfx_3"
@@ -1163,6 +1167,7 @@ final class SettingsStore: ObservableObject {
 
     var transcriptionStartSound: TranscriptionStartSound {
         get {
+            self.migrateTranscriptionStartSoundIfNeeded()
             guard let raw = self.defaults.string(forKey: Keys.transcriptionStartSound),
                   let option = TranscriptionStartSound(rawValue: raw)
             else {
@@ -1616,6 +1621,14 @@ final class SettingsStore: ObservableObject {
                 source: "SettingsStore"
             )
         }
+    }
+
+    private func migrateTranscriptionStartSoundIfNeeded() {
+        guard let legacyEnabled = self.defaults.object(forKey: Keys.enableTranscriptionSounds) as? Bool else { return }
+        if legacyEnabled == false {
+            self.defaults.set(TranscriptionStartSound.none.rawValue, forKey: Keys.transcriptionStartSound)
+        }
+        self.defaults.removeObject(forKey: Keys.enableTranscriptionSounds)
     }
 
     private func migrateProviderAPIKeysIfNeeded() {
