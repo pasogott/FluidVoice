@@ -200,6 +200,8 @@ Anonymous telemetry helps us understand what breaks, where performance can be im
 
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+From 2026-02-23 onward, this project is licensed under the [GNU General Public License, Version 3.0 (GPLv3)](LICENSE).
+
+Commits made before 2026-02-23 were published under the prior license terms.
 
 ---
