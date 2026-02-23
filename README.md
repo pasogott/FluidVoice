@@ -169,8 +169,44 @@ CI uses unsigned builds:
 xcodebuild test -project Fluid.xcodeproj -scheme Fluid -destination 'platform=macOS' CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 ```
 
+## Privacy & Analytics
+
+FluidVoice is designed to be local-first, but it includes optional anonymous analytics.
+
+### What this helps with
+- Feature usage patterns (for example dictation, command mode, and write mode)
+- Product reliability and performance tuning
+- Anonymous release health signals to prioritize fixes and improvements
+
+### What is collected
+- App version, build, and macOS version
+- Low-cardinality feature/config flags (for example app mode and major settings)
+- Approximate usage ranges (not exact values)
+- High-level success/error outcomes
+
+### What is not collected
+- Raw audio or transcribed text
+- Selected text, prompts, or AI-generated responses
+- Terminal commands or outputs
+- Window titles, file names/paths, clipboard content, or typed content
+
+### How to disable
+Analytics are enabled by default. You can disable or re-enable them at any time from:
+
+`Settings → Share Anonymous Analytics`
+
+### Why this exists
+Anonymous telemetry helps us understand what breaks, where performance can be improved, and which features matter most without collecting personal content.
+
+## License History
+
+- Versions before **2026-02-23**: Apache License 2.0
+- Versions on and after **2026-02-23**: GNU General Public License v3.0 (GPLv3)
+
 ## License
 
-This project is licensed under the [Apache License 2.0](LICENSE).
+From 2026-02-23 onward, this project is licensed under the [GNU General Public License, Version 3.0 (GPLv3)](LICENSE).
+
+Versions published before this date were licensed under Apache License 2.0.
 
 ---
