@@ -63,9 +63,9 @@ struct WelcomeView: View {
                                         : "Download the AI model for offline voice transcription (~500MB)"),
                                 status: (self.asr.isAsrReady || self.asr.modelsExistOnDisk) ? .completed : .pending,
                                 action: {
-                                    self.selectedSidebarItem = .aiEnhancements
+                                    self.selectedSidebarItem = .voiceEngine
                                 },
-                                actionButtonTitle: "Go to AI Settings",
+                                actionButtonTitle: "Go to Voice Engine",
                                 showActionButton: !(self.asr.isAsrReady || self.asr.modelsExistOnDisk)
                             )
 
@@ -547,8 +547,6 @@ struct OnboardingFlowView: View {
     let menuBarManager: MenuBarManager
     let theme: AppTheme
 
-    @State private var playgroundText: String = ""
-    @State private var isPlaygroundRecording: Bool = false
     @State private var preferredLanguageChoice: PreferredLanguageChoice = .englishOnly
 
     private enum PreferredLanguageChoice: String, CaseIterable, Identifiable {
@@ -731,6 +729,11 @@ struct OnboardingFlowView: View {
 
     private var isPlaygroundReady: Bool {
         self.settings.onboardingPlaygroundValidated
+    }
+
+    private var onboardingShortcutDisplay: String {
+        let display = self.settings.hotkeyShortcut.displayString.trimmingCharacters(in: .whitespacesAndNewlines)
+        return display.isEmpty ? "your shortcut" : display
     }
 
     private var canContinue: Bool {
@@ -1113,22 +1116,28 @@ struct OnboardingFlowView: View {
                             Text("Quick Playground Test")
                                 .font(.headline)
                             Spacer()
-                            if self.isPlaygroundRecording {
+                            if self.asr.isRunning {
                                 Text("Recording...")
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(.red)
                             }
                         }
 
-                        Button(self.isPlaygroundRecording ? "Stop Recording" : "Start Recording") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Press Start Recording or use \(self.onboardingShortcutDisplay), then stop and confirm your text appears below.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Button(self.asr.isRunning ? "Stop Recording" : "Start Recording") {
                             self.togglePlaygroundRecording()
                         }
-                        .buttonStyle(PremiumButtonStyle(isRecording: self.isPlaygroundRecording))
-                        .disabled(self.asr.micStatus != .authorized)
+                            .buttonStyle(PremiumButtonStyle(isRecording: self.asr.isRunning))
+                            .disabled(self.asr.micStatus != .authorized)
+                        }
 
                         TextEditor(text: Binding(
-                            get: { self.playgroundText },
-                            set: { _ in }
+                            get: { self.asr.finalText },
+                            set: { self.asr.finalText = $0 }
                         ))
                         .font(.body)
                         .frame(height: 170)
@@ -1152,7 +1161,7 @@ struct OnboardingFlowView: View {
                                     .foregroundStyle(.secondary)
                             }
                         } else {
-                            Text("Record a short sample and confirm transcription appears here.")
+                            Text("Record a short sample with the button or your hotkey and confirm transcription appears here.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -1161,6 +1170,11 @@ struct OnboardingFlowView: View {
                 }
             }
             .padding(24)
+        }
+        .onChange(of: self.asr.finalText) { _, newValue in
+            if !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                self.markPlaygroundValidated()
+            }
         }
     }
 
@@ -1460,17 +1474,15 @@ struct OnboardingFlowView: View {
 
     private func togglePlaygroundRecording() {
         Task { @MainActor in
-            if self.isPlaygroundRecording {
+            if self.asr.isRunning {
                 let transcribed = await self.asr.stop()
-                self.isPlaygroundRecording = false
-                self.playgroundText = ASRService.applyGAAVFormatting(transcribed)
-                if !self.playgroundText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                self.asr.finalText = ASRService.applyGAAVFormatting(transcribed)
+                if !self.asr.finalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     self.markPlaygroundValidated()
                 }
             } else {
-                self.playgroundText = ""
+                self.asr.finalText = ""
                 await self.asr.start()
-                self.isPlaygroundRecording = self.asr.isRunning
             }
         }
     }
